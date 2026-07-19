@@ -553,10 +553,13 @@ struct DashboardView: View {
     }
 
     // Live readout for a hovered night: date, HRV, and that night's recovery.
+    // The ms value is tinted by THAT NIGHT's recovery band (matching the table
+    // bars), not the week's verdict — per-night color = recovery, week-level
+    // color = verdict.
     func hrvReadout(_ p: HRVSeriesPoint) -> some View {
         HStack(spacing: 6) {
             Text(p.label).foregroundStyle(.secondary)
-            Text(String(format: "%.0f ms", p.hrv)).foregroundStyle(verdictColor(result.verdict))
+            Text(String(format: "%.0f ms", p.hrv)).foregroundStyle(recoveryColor(p.recovery))
             Spacer(minLength: 4)
             HStack(spacing: 3) {
                 Circle().fill(recoveryColor(p.recovery)).frame(width: 6, height: 6)

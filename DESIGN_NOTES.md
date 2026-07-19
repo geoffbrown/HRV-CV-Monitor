@@ -103,6 +103,11 @@ so a baseline step-up is visible. Hover **scrubs**: shows that night's date, HRV
 (ms), and WHOOP recovery. This is "the evidence" that explains *why* CV is what it
 is. It's open (no box), grouped tightly with the gauge as one visual unit.
 
+- **Color scoping rule:** per-**night** elements are tinted by that night's
+  WHOOP recovery band (table bars, scrub-readout ms + dot); per-**week**
+  elements are tinted by the verdict (gauge knob/number/label, card, chart
+  line). The scrub readout's ms value follows the *night* (user call — it
+  previously leaked the week's verdict color onto a single night).
 - Gotcha we already fixed: **scrub jitter.** Animating the whole VStack on the
   `scrubbing` flag caught the chart and made it twitch. Fix: scope the dim
   animation to *only the dimmed elements* (gauge, legend, status card) and give
