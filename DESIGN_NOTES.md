@@ -273,6 +273,73 @@ fill was too heavy in the bar). Rendered as **one template `NSImage`**
 - **Launch at Login** shipped: a `Toggle` in the footer ⋯ menu backed by
   `SMAppService.mainApp`.
 - A deeper "restraint pass" is mostly done; keep an eye on spacing rhythm if you add sections.
+- **iOS companion app — Phase 1 landed** (shared core + basic iOS build; see
+  below). **Sleep consistency signal also landed**: `read:sleep` scope added,
+  `Sleep`/`SleepCollection` models + `WHOOPService.fetchSleep`, and a fourth
+  SIGNALS row (`sleepConsistencySignalRow`) averaging WHOOP's own
+  `sleep_consistency_percentage` over the same 7-night windows as the HRV-CV
+  calculation — deliberately reusing WHOOP's own score rather than deriving a
+  duration-variability metric ourselves. **Caveat:** existing sign-ins issued
+  before this scope was added won't have `read:sleep` on their token; the row
+  just stays hidden (`avgSleepConsistency == nil`) until the user signs out
+  and reconnects WHOOP to re-consent — there's no migration path, and that's
+  fine, it degrades silently rather than erroring.
+  Still to come: an App Group + shared snapshot, a Widget Extension (home
+  screen + lock screen: `accessoryCircular`/`accessoryRectangular`/
+  `accessoryInline`), and a `BGAppRefreshTask` that fires one local
+  notification per day when a new recovery record lands. None of that is
+  built yet — don't assume it exists.
+- **SIGNALS wording**: "Night-to-night swing" values are past-tense
+  ("Widened"/"Settled"/"Steady"), not present-progressive ("Widening") —
+  deliberate, because all SIGNALS comparisons are rolling-7-night-window vs
+  the prior rolling-7-night-window, not a live trend, and "-ing" reads as
+  "happening right now" even when the chart's tail is already recovering.
+  The `SIGNALS · VS. PRIOR 7 NIGHTS` caption and the `.help()` tooltip copy
+  ("over the last 7 nights" / "the 7 nights before that", not "this week" /
+  "last week") exist for the same reason — "week" implies a calendar week,
+  which this isn't. Keep any new SIGNALS row consistent with both of these.
+
+### iOS Phase 1 architecture (for the next instance)
+
+The project turned out to already be Xcode's **single-target multiplatform
+app** template (`SUPPORTED_PLATFORMS` includes `iphoneos`/`iphonesimulator`
+alongside `macosx`) — there's no separate iOS `PBXNativeTarget`. Both
+platforms are built from the *same* target and the *same* source files, split
+with `#if os(macOS)` / `#if os(iOS)` inline, not by target membership. Keep
+using that pattern rather than introducing a second native target — a Widget
+Extension will be the first thing that actually needs one (WidgetKit
+extensions can't share a target with the host app).
+
+Shared, platform-neutral logic (HRV math, WHOOP OAuth/networking/Keychain,
+mock data, tier colors) now lives in a local Swift package, **`HRVCVCore/`**,
+consumed by the app target via a package product dependency
+(`packageProductDependencies` in the pbxproj). Types crossing the
+package/app boundary had to be marked `public` — if you add a new field to
+`HRVCVResult`/`HRVDay`/etc. that `ContentView.swift` needs to read, remember
+the `public` keyword or it'll only fail to compile from the app side, not the
+package side.
+
+`WHOOPService.presentationAnchorProvider` is the one place the platform split
+threads through the package cleanly: the package only imports
+`AuthenticationServices` (cross-platform) and never AppKit/UIKit — each
+platform's `HRVViewModel.init()` sets the closure (mac: `NSApp.keyWindow`; iOS:
+the foreground `UIWindowScene`'s key window). If you ever add another
+platform-specific hook to `WHOOPService`, follow this same injected-closure
+shape rather than reaching for `#if os()` inside the package itself.
+
+`Secrets.swift` moved from `HRV-CV Monitor/` to
+`HRVCVCore/Sources/HRVCVCore/` (still git-ignored, `.example` template still
+committed) — one WHOOP developer app/credential pair now serves both
+platforms, since they share the redirect URI scheme.
+
+`LSUIElement` (menu-bar-only, no Dock icon) is scoped to macOS only via
+`"INFOPLIST_KEY_LSUIElement[sdk=macosx*]"` in the build settings, not the
+static `Info.plist` — the iOS build is an ordinary foreground app.
+
+**Not yet verified in Xcode** (this was built headless, no Xcode GUI
+available): open the project, let it resolve the new local package, confirm
+the iOS destination actually builds and runs in Simulator, and do a real
+WHOOP OAuth login on both destinations before trusting this is solid.
 
 ## 9. Working style the user expects
 
