@@ -19,6 +19,19 @@ struct TrendPoint: Identifiable {
     let avgRecovery : Int       // average WHOOP recovery over that window
 }
 
+// MARK: - HRV Series Point
+// One night of the evidence chart: the nightly HRV plus the rolling baseline
+// (mean) and spread (sd) over the trailing week — the "expected range".
+struct HRVSeriesPoint: Identifiable {
+    let id = UUID()
+    let date     : Date
+    let label    : String
+    let hrv      : Double
+    let mean     : Double   // rolling baseline
+    let sd       : Double   // rolling spread (half the expected range)
+    let recovery : Int
+}
+
 // MARK: - CV Result
 struct HRVCVResult {
     let days    : [HRVDay]   // 7 days, oldest first
@@ -29,6 +42,8 @@ struct HRVCVResult {
     let previousCV   : Double?  // 7-night CV for the prior week, if available
     let previousMean : Double?  // 7-night mean HRV for the prior week, if available
     let cvHistory    : [TrendPoint] // rolling 7-night CV over recent days (oldest → newest)
+    let hrvSeries    : [HRVSeriesPoint] // nightly HRV + rolling baseline, for the evidence chart
+    let avgRecovery  : Int          // average WHOOP recovery over the window
 
     var cvFormatted   : String { String(format: "%.1f%%", cv) }
     var meanFormatted : String { String(format: "%.1f ms", mean) }
@@ -83,11 +98,11 @@ struct HRVCVResult {
         case .onTrack:
             return "Consistent recovery. Under 8% is elite territory."
         case .levelingUp:
-            return "Your HRV baseline is climbing, so this week's wider swing is the shift to a higher level, not instability. It should settle as the new baseline holds."
+            return "Baseline is climbing, so the wider swing is a step up, not instability."
         case .elevated:
-            return "Your HRV is swinging more than usual. Under 15% is the steadier range."
+            return "Swinging more than usual. Under 15% is the steadier range."
         case .destabilizing:
-            return "Your HRV is swinging more and the baseline is dropping, which can signal accumulating fatigue or stress. A good week to ease off."
+            return "Wider swings with a falling baseline can signal fatigue. Ease off this week."
         }
     }
 
@@ -114,6 +129,20 @@ struct HRVCVResult {
         if d >  1 { return  1 }
         if d < -1 { return -1 }
         return 0
+    }
+
+    /// HRV baseline change vs the prior week, in ms (signed).
+    var baselineDeltaMs: Double? { previousMean.map { mean - $0 } }
+
+    /// Short, verdict-forward label for the gauge (leads with meaning).
+    var verdictLabel: String {
+        switch verdict {
+        case .elite:         return "ELITE"
+        case .onTrack:       return "ON TRACK"
+        case .levelingUp:    return "TRANSITIONING"
+        case .elevated:      return "ELEVATED"
+        case .destabilizing: return "DESTABILIZING"
+        }
     }
 }
 
@@ -175,10 +204,28 @@ enum HRVCalculator {
         }
         if cvHistory.count > 14 { cvHistory = Array(cvHistory.suffix(14)) }
 
+        // Nightly HRV series with a rolling baseline (trailing up to 7 nights),
+        // for the evidence chart — the last 14 nights.
+        var hrvSeries: [HRVSeriesPoint] = []
+        let seriesCount = min(parsed.count, 14)
+        for i in (parsed.count - seriesCount)..<parsed.count {
+            let win = Array(parsed[max(0, i - 6)...i])
+            let vals = win.map(\.hrv)
+            let m = vals.reduce(0, +) / Double(vals.count)
+            let sd = vals.count >= 2
+                ? (vals.map { pow($0 - m, 2) }.reduce(0, +) / Double(vals.count - 1)).squareRoot()
+                : 0
+            hrvSeries.append(HRVSeriesPoint(date: parsed[i].date, label: parsed[i].label,
+                                            hrv: parsed[i].hrv, mean: m, sd: sd,
+                                            recovery: parsed[i].recovery))
+        }
+
+        let avgRecovery = Int((window.map { Double($0.recovery) }.reduce(0, +) / Double(window.count)).rounded())
+
         return HRVCVResult(days: window, mean: current.mean, sd: current.sd,
                            cv: current.cv, window: windowLabel,
                            previousCV: previousCV, previousMean: previousMean,
-                           cvHistory: cvHistory)
+                           cvHistory: cvHistory, hrvSeries: hrvSeries, avgRecovery: avgRecovery)
     }
 
     /// Sample mean, standard deviation, and coefficient of variation (%) for a set of nights.

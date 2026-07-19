@@ -90,21 +90,11 @@ let popoverBackground = adaptiveTier(light: (0.96, 0.96, 0.97), dark: (0.12, 0.1
 // MARK: - Arc Gauge
 struct CVGauge: View {
     let cv: Double
+    let accent: Color   // verdict color (leads with meaning, not raw tier)
+    let label: String   // verdict label, e.g. "TRANSITIONING"
     private let maxCV: Double = 30   // 30% fills the arc fully
 
     private var normalized: Double { min(max(cv / maxCV, 0), 1.0) }
-
-    private var color: Color {
-        if cv <= 8  { return tierGreen }
-        if cv <= 15 { return tierAmber }
-        return tierRed
-    }
-
-    private var tierLabel: String {
-        if cv <= 8  { return "ELITE" }
-        if cv <= 15 { return "ON TRACK" }
-        return "ELEVATED"
-    }
 
     var body: some View {
         GeometryReader { geo in
@@ -118,26 +108,27 @@ struct CVGauge: View {
             let b2 = 15.0 / maxCV                // On-Track / Elevated boundary
             let g  = 0.02                        // half-gap at each boundary
             let stroke = StrokeStyle(lineWidth: lw, lineCap: .round)
-            let track  = Color.primary.opacity(0.08)
 
             ZStack {
-                // Neutral track, drawn as three tier segments with soft rounded gaps
+                // Neutral track — a calm ruler. CV has no intrinsic good/bad, so the
+                // scale isn't colour-coded; the boundary gaps still mark 8% and 15%.
                 Group {
-                    seg(0,      b1 - g, cx, cy, r).stroke(track, style: stroke)
-                    seg(b1 + g, b2 - g, cx, cy, r).stroke(track, style: stroke)
-                    seg(b2 + g, 1,      cx, cy, r).stroke(track, style: stroke)
+                    seg(0,      b1 - g, cx, cy, r).stroke(Color.primary.opacity(0.1), style: stroke)
+                    seg(b1 + g, b2 - g, cx, cy, r).stroke(Color.primary.opacity(0.1), style: stroke)
+                    seg(b2 + g, 1,      cx, cy, r).stroke(Color.primary.opacity(0.1), style: stroke)
                 }
 
-                // Single-hue fill up to the value, within the same segments
+                // Fill up to the value in a single verdict hue — position (how far)
+                // and judgment (the colour) together, with no traffic-light clash.
                 Group {
                     if normalized > 0 {
-                        seg(0, min(b1 - g, normalized), cx, cy, r).stroke(color, style: stroke)
+                        seg(0, min(b1 - g, normalized), cx, cy, r).stroke(accent, style: stroke)
                     }
                     if normalized > b1 + g {
-                        seg(b1 + g, min(b2 - g, normalized), cx, cy, r).stroke(color, style: stroke)
+                        seg(b1 + g, min(b2 - g, normalized), cx, cy, r).stroke(accent, style: stroke)
                     }
                     if normalized > b2 + g {
-                        seg(b2 + g, min(1, normalized), cx, cy, r).stroke(color, style: stroke)
+                        seg(b2 + g, min(1, normalized), cx, cy, r).stroke(accent, style: stroke)
                     }
                 }
 
@@ -145,11 +136,11 @@ struct CVGauge: View {
                 let pt = arcPoint(n: normalized, cx: cx, cy: cy, r: r)
                 Circle()
                     .fill(popoverBackground)
-                    .overlay(Circle().stroke(color, lineWidth: 3))
+                    .overlay(Circle().stroke(Color.primary, lineWidth: 2.5))  // white ring, pops over the fill
                     .frame(width: 13, height: 13)
                     .position(pt)
 
-                // Metric + value + tier, centered in the bowl
+                // Metric + value + verdict, centered in the bowl
                 VStack(spacing: 2) {
                     Text("HRV-CV")
                         .font(.system(size: 9, weight: .semibold))
@@ -157,12 +148,12 @@ struct CVGauge: View {
                         .foregroundStyle(.tertiary)
                     Text(String(format: "%.1f%%", cv))
                         .font(.system(size: 32, weight: .bold, design: .rounded))
-                        .foregroundStyle(color)
+                        .foregroundStyle(accent)
                         .contentTransition(.numericText())
-                    Text(tierLabel)
+                    Text(label)
                         .font(.system(size: 10, weight: .semibold))
-                        .tracking(1.8)
-                        .foregroundStyle(.secondary)
+                        .tracking(1.6)
+                        .foregroundStyle(accent)
                 }
                 .position(x: cx, y: cy - r * 0.40)
             }
@@ -203,100 +194,114 @@ struct CVGauge: View {
     }
 }
 
-// MARK: - Sparkline (interactive: reports the hovered index to its container)
-struct Sparkline: View {
-    let points: [TrendPoint]
-    let lineColor: Color                  // line / area / resting dot (the verdict color)
-    let tierColor: (Double) -> Color      // accent for the hovered point, by its tier
-    let thresholds: [Double]              // tier boundaries drawn as faint guide lines
+// MARK: - HRV Band Chart
+// The "evidence": nightly HRV (dots) travelling through its typical range (the
+// band = terrain). A ghosted line marks last week's baseline so the shift shows.
+struct HRVBandChart: View {
+    let series: [HRVSeriesPoint]
+    let oldBaseline: Double?
+    let tint: Color
     @Binding var hoverIndex: Int?
 
-    private var values: [Double] { points.map(\.cv) }
+    private var domain: (lo: Double, hi: Double) {
+        var vals: [Double] = []
+        for p in series { vals += [p.hrv, p.mean - p.sd, p.mean + p.sd] }
+        if let o = oldBaseline { vals.append(o) }
+        let lo = vals.min() ?? 0, hi = vals.max() ?? 1
+        let pad = max((hi - lo) * 0.12, 1)
+        return (lo - pad, hi + pad)
+    }
+    private func x(_ i: Int, _ w: CGFloat) -> CGFloat {
+        series.count > 1 ? CGFloat(i) / CGFloat(series.count - 1) * w : w / 2
+    }
+    private func y(_ v: Double, _ h: CGFloat) -> CGFloat {
+        let d = domain
+        return (1 - CGFloat((v - d.lo) / max(d.hi - d.lo, 0.0001))) * h
+    }
 
     var body: some View {
         GeometryReader { geo in
-            let size = geo.size
-            let pts = coords(in: size)
+            let w = geo.size.width, h = geo.size.height
             ZStack(alignment: .topLeading) {
-                // Faint tier boundary guides (e.g. 8% and 15%)
-                ForEach(thresholds, id: \.self) { t in
-                    let ty = y(t, size.height)
-                    Path { p in
-                        p.move(to: CGPoint(x: 0, y: ty))
-                        p.addLine(to: CGPoint(x: size.width, y: ty))
-                    }
-                    .stroke(Color.secondary.opacity(0.16),
-                            style: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
+                // Typical range — the terrain
+                bandPath(w, h).fill(tint.opacity(0.16))
+                envelope(w, h, upper: true).stroke(tint.opacity(0.30), lineWidth: 1)
+                envelope(w, h, upper: false).stroke(tint.opacity(0.30), lineWidth: 1)
+
+                // Last week's baseline, ghosted, so the step-up is undeniable
+                if let o = oldBaseline {
+                    let oy = y(o, h)
+                    Path { p in p.move(to: CGPoint(x: 0, y: oy)); p.addLine(to: CGPoint(x: w, y: oy)) }
+                        .stroke(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
+                    Text("last week")
+                        .font(.system(size: 7, weight: .medium))
+                        .foregroundStyle(.tertiary)
+                        .position(x: 28, y: oy - 6)
                 }
 
-                areaPath(pts, height: size.height)
-                    .fill(LinearGradient(colors: [lineColor.opacity(0.14), lineColor.opacity(0.0)],
-                                         startPoint: .top, endPoint: .bottom))
-                linePath(pts)
-                    .stroke(lineColor, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                // Nightly HRV — the travellers
+                hrvPath(w, h).stroke(tint.opacity(0.85),
+                                     style: StrokeStyle(lineWidth: 1.3, lineCap: .round, lineJoin: .round))
+                ForEach(series.indices, id: \.self) { i in
+                    Circle().fill(tint).frame(width: 4, height: 4)
+                        .position(x: x(i, w), y: y(series[i].hrv, h))
+                }
 
-                if let i = hoverIndex, pts.indices.contains(i) {
-                    let p = pts[i]
-                    let accent = tierColor(values[i])
-                    Rectangle().fill(accent.opacity(0.40)).frame(width: 1)
-                        .frame(maxHeight: .infinity).position(x: p.x, y: size.height / 2)
-                    Circle().fill(accent).frame(width: 6, height: 6).position(p)
-                } else if let last = pts.last {
-                    Circle().fill(lineColor).frame(width: 4.5, height: 4.5).position(last)
+                if let i = hoverIndex, series.indices.contains(i) {
+                    let px = x(i, w), py = y(series[i].hrv, h)
+                    // Neutral scrub guide + a selection marker (halo, not a judgment)
+                    Rectangle().fill(Color.secondary.opacity(0.30)).frame(width: 1)
+                        .frame(maxHeight: .infinity).position(x: px, y: h / 2)
+                    Circle().stroke(tint.opacity(0.4), lineWidth: 1)
+                        .frame(width: 13, height: 13).position(x: px, y: py)
+                    Circle().fill(tint)
+                        .overlay(Circle().stroke(popoverBackground, lineWidth: 1.5))
+                        .frame(width: 7, height: 7).position(x: px, y: py)
                 }
             }
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
-                case .active(let loc): hoverIndex = nearestIndex(to: loc.x, in: size)
+                case .active(let loc): hoverIndex = nearestIndex(loc.x, w)
                 case .ended:           hoverIndex = nil
                 }
             }
         }
     }
 
-    // Vertical domain includes the data and the thresholds so the guides sit in range.
-    private var domain: (lo: Double, hi: Double) {
-        let all = values + thresholds
-        let lo = all.min() ?? 0, hi = all.max() ?? 1
-        let pad = max((hi - lo) * 0.12, 0.5)
-        return (lo - pad, hi + pad)
+    private func nearestIndex(_ px: CGFloat, _ w: CGFloat) -> Int {
+        guard series.count > 1 else { return 0 }
+        let step = w / CGFloat(series.count - 1)
+        return min(max(Int((px / step).rounded()), 0), series.count - 1)
     }
 
-    private func y(_ v: Double, _ h: CGFloat) -> CGFloat {
-        let d = domain
-        return (1 - CGFloat((v - d.lo) / max(d.hi - d.lo, 0.0001))) * h
-    }
-
-    private func coords(in size: CGSize) -> [CGPoint] {
-        guard values.count > 1 else { return [] }
-        let stepX = size.width / CGFloat(values.count - 1)
-        return values.enumerated().map { i, v in
-            CGPoint(x: CGFloat(i) * stepX, y: y(v, size.height))
+    private func hrvPath(_ w: CGFloat, _ h: CGFloat) -> Path {
+        Path { p in
+            for (i, pt) in series.enumerated() {
+                let c = CGPoint(x: x(i, w), y: y(pt.hrv, h))
+                if i == 0 { p.move(to: c) } else { p.addLine(to: c) }
+            }
         }
     }
-
-    private func nearestIndex(to x: CGFloat, in size: CGSize) -> Int {
-        guard values.count > 1 else { return 0 }
-        let stepX = size.width / CGFloat(values.count - 1)
-        return min(max(Int((x / stepX).rounded()), 0), values.count - 1)
-    }
-
-    private func linePath(_ pts: [CGPoint]) -> Path {
+    private func envelope(_ w: CGFloat, _ h: CGFloat, upper: Bool) -> Path {
         Path { p in
-            guard let first = pts.first else { return }
-            p.move(to: first)
-            for pt in pts.dropFirst() { p.addLine(to: pt) }
+            for (i, pt) in series.enumerated() {
+                let v = upper ? pt.mean + pt.sd : pt.mean - pt.sd
+                let c = CGPoint(x: x(i, w), y: y(v, h))
+                if i == 0 { p.move(to: c) } else { p.addLine(to: c) }
+            }
         }
     }
-
-    private func areaPath(_ pts: [CGPoint], height: CGFloat) -> Path {
+    private func bandPath(_ w: CGFloat, _ h: CGFloat) -> Path {
         Path { p in
-            guard let first = pts.first, let last = pts.last else { return }
-            p.move(to: CGPoint(x: first.x, y: height))
-            p.addLine(to: first)
-            for pt in pts.dropFirst() { p.addLine(to: pt) }
-            p.addLine(to: CGPoint(x: last.x, y: height))
+            guard !series.isEmpty else { return }
+            for (i, pt) in series.enumerated() {
+                let c = CGPoint(x: x(i, w), y: y(pt.mean + pt.sd, h))
+                if i == 0 { p.move(to: c) } else { p.addLine(to: c) }
+            }
+            for i in stride(from: series.count - 1, through: 0, by: -1) {
+                p.addLine(to: CGPoint(x: x(i, w), y: y(series[i].mean - series[i].sd, h)))
+            }
             p.closeSubpath()
         }
     }
@@ -391,63 +396,168 @@ struct DashboardView: View {
     let result: HRVCVResult
     @EnvironmentObject var vm: HRVViewModel
     @State private var trendHover: Int?
+    @State private var showHistory = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            CVGauge(cv: result.cv)
-            trendCard
-            zoneLegend
+        // While scrubbing the chart you're time-travelling — dim today's verdict
+        // so the history reads as primary.
+        let scrubbing = trendHover != nil
+        // Whitespace, not rules, separates sections — one consistent air scale.
+        return VStack(alignment: .leading, spacing: 16) {
+            // Chart unit: the gauge, its trajectory, and the scale, grouped tightly.
+            // Only the dimmed pieces animate — never the chart (avoids scrub jitter).
+            VStack(spacing: 10) {
+                CVGauge(cv: result.cv,
+                        accent: verdictColor(result.verdict),
+                        label: result.verdictLabel)
+                    .opacity(scrubbing ? 0.4 : 1)
+                    .animation(.easeInOut(duration: 0.15), value: scrubbing)
+                trendChart
+                zoneLegend
+                    .opacity(scrubbing ? 0.4 : 1)
+                    .animation(.easeInOut(duration: 0.15), value: scrubbing)
+            }
             statusCard
-            Divider().opacity(0.5)
+                .opacity(scrubbing ? 0.4 : 1)
+                .animation(.easeInOut(duration: 0.15), value: scrubbing)
             statsRow
-            dayTable
-            Divider().opacity(0.5)
+            historyDisclosure
+            Divider().opacity(0.3)
             footerRow
+        }
+    }
+
+    // MARK: History disclosure — the 7-night table is the densest, least-glanced
+    // block, so it's details-on-demand: hidden by default, one quiet tap to open.
+    @ViewBuilder
+    var historyDisclosure: some View {
+        VStack(spacing: 10) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showHistory.toggle() }
+            } label: {
+                HStack(spacing: 4) {
+                    Text("7-day history")
+                        .font(.system(size: 10, weight: .medium))
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .semibold))
+                        .rotationEffect(.degrees(showHistory ? 90 : 0))
+                    Spacer()
+                }
+                .foregroundStyle(.tertiary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if showHistory { dayTable }
         }
     }
 
     // MARK: Hero — the gauge and its HRV-CV trajectory as one unit (no card box).
     // The line flows straight out of the gauge; the row below doubles as a live
     // readout while scrubbing.
-    // MARK: Trend card — contained to match the status card, with real presence
-    // (taller chart, padding). Header doubles as a live readout while scrubbing.
+    // MARK: Evidence chart — nightly HRV inside its expected range, open (no box),
+    // grouped with the gauge as one chart unit. Answers "why is CV what it is."
     @ViewBuilder
-    var trendCard: some View {
-        if result.cvHistory.count >= 2 {
-            let pts = result.cvHistory
-            VStack(alignment: .leading, spacing: 8) {
+    var trendChart: some View {
+        if result.hrvSeries.count >= 2 {
+            let s = result.hrvSeries
+            VStack(spacing: 6) {
                 HStack(spacing: 6) {
-                    if let i = trendHover, pts.indices.contains(i) {
-                        trendReadout(pts[i])
+                    if let i = trendHover, s.indices.contains(i) {
+                        hrvReadout(s[i])
                     } else {
-                        Text("HRV-CV TREND")
-                            .font(.system(size: 8, weight: .semibold))
-                            .tracking(0.6)
-                            .foregroundStyle(.tertiary)
+                        HStack(spacing: 4) {
+                            Text("HRV")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.secondary)
+                            Text("typical range")
+                                .font(.system(size: 9))
+                                .foregroundStyle(.tertiary)
+                        }
                         Spacer()
-                        trendSummary
+                        baselineSummary
                     }
                 }
-                Sparkline(points: pts,
-                          lineColor: verdictColor(result.verdict),
-                          tierColor: { tierColor(forCV: $0) },
-                          thresholds: [8, 15],
-                          hoverIndex: $trendHover)
-                    .frame(height: 50)
+                .frame(height: 14)   // fixed so the default↔scrub swap can't reflow
+                HRVBandChart(series: s,
+                             oldBaseline: result.previousMean,
+                             tint: verdictColor(result.verdict),
+                             hoverIndex: $trendHover)
+                    .frame(height: 76)
                 HStack {
-                    Text(pts.first?.label ?? "")
+                    Text(s.first?.label ?? "")
                     Spacer()
-                    Text(pts.last?.label ?? "")
+                    Text(s.last?.label ?? "")
                 }
                 .font(.system(size: 8))
                 .foregroundStyle(.tertiary)
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(0.06))
-            )
         }
+    }
+
+    // Live readout for a hovered night: date, HRV, and that night's recovery.
+    func hrvReadout(_ p: HRVSeriesPoint) -> some View {
+        HStack(spacing: 6) {
+            Text(p.label).foregroundStyle(.secondary)
+            Text(String(format: "%.0f ms", p.hrv)).foregroundStyle(verdictColor(result.verdict))
+            Spacer(minLength: 4)
+            HStack(spacing: 3) {
+                Circle().fill(recoveryColor(p.recovery)).frame(width: 6, height: 6)
+                Text("\(p.recovery)% recovery").foregroundStyle(.secondary)
+            }
+        }
+        .font(.system(size: 10, weight: .semibold, design: .rounded))
+    }
+
+    // WHOOP recovery zones: green ≥67, yellow 34–66, red <34.
+    func recoveryColor(_ pct: Int) -> Color {
+        pct >= 67 ? tierGreen : pct >= 34 ? tierAmber : tierRed
+    }
+
+    // Baseline change vs last week, in ms (HRV up = good = green).
+    @ViewBuilder
+    var baselineSummary: some View {
+        if let d = result.baselineDeltaMs, abs(d) >= 1 {
+            let up = d > 0
+            HStack(spacing: 3) {
+                Image(systemName: up ? "arrow.up" : "arrow.down").font(.system(size: 8, weight: .bold))
+                Text(String(format: "Baseline %@ %.0f ms", up ? "up" : "down", abs(d)))
+            }
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(up ? tierGreen : tierRed)
+        }
+    }
+
+    // MARK: Verdict callout — the one contained card, gently tinted by the verdict.
+    var statusCard: some View {
+        let accent = verdictColor(result.verdict)
+        return HStack(alignment: .top, spacing: 10) {
+            RoundedRectangle(cornerRadius: 1.5).fill(accent).frame(width: 3)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(result.statusHeadline)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(accent)
+                Text(result.statusDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(1.5)
+                    .fixedSize(horizontal: false, vertical: true)
+                signalsList
+            }
+            Spacer(minLength: 6)
+            Button(action: openLearnMore) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("What is HRV-CV?")
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(accent.opacity(0.08))
+        )
     }
 
     // Live readout: the hovered point's date, HRV-CV (colored by that point's
@@ -484,39 +594,73 @@ struct DashboardView: View {
 
     // MARK: Status callout: headline + detail in a quietly tinted card,
     // with an (i) that explains what HRV-CV is.
-    var statusCard: some View {
-        let accent = verdictColor(result.verdict)
-        return HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(accent)
-                .frame(width: 3)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(result.statusHeadline)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(accent)
-                Text(result.statusDetail)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(1.5)
-                    .fixedSize(horizontal: false, vertical: true)
+    // Reasoning: the signals behind the verdict, expressed as logic (qualitative
+    // reasons), not telemetry — the raw numbers already live elsewhere in the UI.
+    @ViewBuilder
+    var signalsList: some View {
+        if result.baselineDeltaMs != nil {
+            Divider().opacity(0.35).padding(.top, 3)
+            Text("SIGNALS")
+                .font(.system(size: 7.5, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(.tertiary)
+                .padding(.top, 3)
+            VStack(spacing: 3) {
+                baselineSignalRow
+                variabilitySignalRow
+                recoverySignalRow
             }
-            Spacer(minLength: 6)
-            Button(action: openLearnMore) {
-                Image(systemName: "info.circle")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("What is HRV-CV?")
+            .padding(.top, 2)
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(accent.opacity(0.08))
-        )
     }
 
-    // Verdict color: green = doing well / levelling up, amber = fine, coral = watch out.
+    var baselineSignalRow: some View {
+        let bd = result.baselineDeltaMs ?? 0
+        let sym: String, tint: Color, word: String
+        if bd > 3        { sym = "arrow.up";    tint = tierGreen; word = "Rising" }
+        else if bd < -3  { sym = "arrow.down";  tint = tierRed;   word = "Falling" }
+        else             { sym = "arrow.right"; tint = .secondary; word = "Steady" }
+        return signalRow(sym: sym, tint: tint, label: "Baseline", value: word)
+    }
+
+    var variabilitySignalRow: some View {
+        let td = result.trendDelta ?? 0
+        let sym = td > 0.5 ? "arrow.up" : td < -0.5 ? "arrow.down" : "arrow.right"
+        let tint: Color, word: String
+        switch result.verdict {
+        case .elite, .onTrack: tint = tierGreen;  word = "Tight"
+        case .levelingUp:      tint = .secondary; word = "Expected"
+        case .elevated:        tint = tierAmber;  word = "Elevated"
+        case .destabilizing:   tint = tierRed;    word = "Concerning"
+        }
+        return signalRow(sym: sym, tint: tint, label: "Variability", value: word)
+    }
+
+    var recoverySignalRow: some View {
+        let r = result.avgRecovery
+        let word = r >= 67 ? "Strong" : r >= 34 ? "Moderate" : "Low"
+        return signalRow(sym: nil, tint: recoveryColor(r), label: "Recovery", value: word)
+    }
+
+    func signalRow(sym: String?, tint: Color, label: String, value: String) -> some View {
+        HStack(spacing: 7) {
+            Group {
+                if let sym {
+                    Image(systemName: sym).font(.system(size: 8, weight: .bold))
+                } else {
+                    Circle().frame(width: 5, height: 5)
+                }
+            }
+            .foregroundStyle(tint)
+            .frame(width: 10)
+            Text(label).foregroundStyle(.tertiary)
+            Spacer()
+            Text(value).foregroundStyle(.secondary)
+        }
+        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+    }
+
+    // Verdict color: green = doing well / leveling up, amber = fine, coral = watch out.
     func verdictColor(_ v: HRVCVResult.Verdict) -> Color {
         switch v {
         case .elite, .levelingUp:       return tierGreen
@@ -541,12 +685,14 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // Neutral reference scale (a goal ladder, not a verdict) — the active zone
+    // is just emphasized, never colored. Color belongs to the interpretation.
     func tierMark(_ name: String, _ range: String, tier: HRVCVResult.Tier) -> some View {
         let active = result.tier == tier
         return HStack(spacing: 4) {
             Text(name)
                 .font(.system(size: 9, weight: active ? .bold : .medium))
-                .foregroundStyle(active ? tierColor(tier) : Color.secondary)
+                .foregroundStyle(active ? Color.primary : Color.secondary)
             Text(range)
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.tertiary)
@@ -578,15 +724,19 @@ struct DashboardView: View {
             statCell(label: "SPREAD", value: result.sdFormatted,
                      help: "How much your nightly HRV varied (standard deviation). HRV-CV is this spread divided by the average.")
             Spacer()
-            statCell(label: "WINDOW", value: result.window,
-                     help: "The 7 nights included in this HRV-CV calculation.")
+            statCell(label: "RECOVERY", value: "\(result.avgRecovery)%",
+                     help: "Average WHOOP recovery over the 7-night window.",
+                     valueColor: recoveryColor(result.avgRecovery))
         }
     }
 
-    func statCell(label: String, value: String, help: String, trend: Int? = nil) -> some View {
+    func statCell(label: String, value: String, help: String,
+                  trend: Int? = nil, valueColor: Color? = nil) -> some View {
         VStack(spacing: 3) {
             HStack(spacing: 2) {
                 Text(value).font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(valueColor ?? .primary)
                 if let t = trend {
                     Image(systemName: t > 0 ? "arrow.up" : t < 0 ? "arrow.down" : "arrow.right")
                         .font(.system(size: 8, weight: .bold))
@@ -640,7 +790,7 @@ struct DashboardView: View {
     }
 
     func recoveryBar(_ pct: Int) -> some View {
-        let color: Color = pct >= 67 ? tierGreen : pct >= 34 ? tierAmber : tierRed
+        let color = recoveryColor(pct)
         return GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Color.primary.opacity(0.08))
@@ -657,14 +807,15 @@ struct DashboardView: View {
             if let updated = vm.lastUpdated {
                 Text("Updated \(updated, format: .relative(presentation: .named))")
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.tertiary)
             }
             Spacer()
             Button(action: { Task { await vm.load() } }) {
                 Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
-            .font(.caption)
             .disabled(vm.isLoading)
 
             Menu {
@@ -674,6 +825,8 @@ struct DashboardView: View {
                     .keyboardShortcut("q")
             } label: {
                 Image(systemName: "ellipsis")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
