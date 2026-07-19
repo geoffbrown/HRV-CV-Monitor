@@ -9,16 +9,6 @@ struct HRVDay: Identifiable {
     let recovery  : Int      // 0–100
 }
 
-// MARK: - Trend Point
-// One point on the HRV-CV sparkline: a rolling 7-night window ending on `date`.
-struct TrendPoint: Identifiable {
-    let id = UUID()
-    let date        : Date
-    let label       : String   // window end day, e.g. "Jul 16"
-    let cv          : Double    // 7-night HRV-CV ending that day
-    let avgRecovery : Int       // average WHOOP recovery over that window
-}
-
 // MARK: - HRV Series Point
 // One night of the evidence chart: the nightly HRV plus the rolling baseline
 // (mean) and spread (sd) over the trailing week — the "expected range".
@@ -41,7 +31,6 @@ struct HRVCVResult {
     let window  : String     // e.g. "Jul 10 – Jul 16"
     let previousCV   : Double?  // 7-night CV for the prior week, if available
     let previousMean : Double?  // 7-night mean HRV for the prior week, if available
-    let cvHistory    : [TrendPoint] // rolling 7-night CV over recent days (oldest → newest)
     let hrvSeries    : [HRVSeriesPoint] // nightly HRV + rolling baseline, for the evidence chart
     let avgRecovery  : Int          // average WHOOP recovery over the window
 
@@ -106,18 +95,8 @@ struct HRVCVResult {
         }
     }
 
-    // Week-over-week direction of the CV. Lower CV is better, so `improving`
-    // means the CV fell versus the prior 7-night window.
-    enum Trend { case improving, worsening, flat }
-
-    var trend: Trend {
-        guard let prev = previousCV else { return .flat }
-        let delta = cv - prev
-        if delta < -0.5 { return .improving }
-        if delta >  0.5 { return .worsening }
-        return .flat
-    }
-
+    // Week-over-week change of the CV vs the prior 7-night window (signed).
+    // Lower CV is better, so negative = improving.
     var trendDelta: Double? { previousCV.map { cv - $0 } }
 
     // Direction of the HRV baseline (mean) vs the prior week: +1 up (better),
@@ -139,7 +118,7 @@ struct HRVCVResult {
         switch verdict {
         case .elite:         return "ELITE"
         case .onTrack:       return "ON TRACK"
-        case .levelingUp:    return "TRANSITIONING"
+        case .levelingUp:    return "LEVELING UP"
         case .elevated:      return "ELEVATED"
         case .destabilizing: return "DESTABILIZING"
         }
@@ -161,7 +140,7 @@ enum HRVCalculator {
         display.dateFormat = "MMM d"
 
         // Parse records into HRVDay values, filter valid HRV, sort oldest first
-        let parsed: [HRVDay] = records.compactMap { rec in
+        let allParsed: [HRVDay] = records.compactMap { rec in
             guard rec.scoreState == "SCORED",
                   let hrv = rec.score?.hrvRmssdMilli, hrv > 0,
                   let recovery = rec.score?.recoveryScore else { return nil }
@@ -177,6 +156,12 @@ enum HRVCalculator {
             )
         }.sorted { $0.date < $1.date }
 
+        // Keep one record per calendar day (the latest), so an updated or extra
+        // recovery for the same day can't double-count a night in the window.
+        var byDay: [Date: HRVDay] = [:]
+        for day in allParsed { byDay[Calendar.current.startOfDay(for: day.date)] = day }
+        let parsed = byDay.values.sorted { $0.date < $1.date }
+
         guard parsed.count >= 7, let current = stats(of: parsed.suffix(7)) else { return nil }
 
         // Take most recent 7
@@ -190,19 +175,6 @@ enum HRVCalculator {
             let prior = parsed[(parsed.count - 14)..<(parsed.count - 7)]
             if let s = stats(of: prior) { previousCV = s.cv; previousMean = s.mean }
         }
-
-        // Rolling 7-night CV over recent days (oldest to newest), for the sparkline.
-        // Each point carries its window-end date and average recovery for hover.
-        var cvHistory: [TrendPoint] = []
-        for end in 7...parsed.count {
-            let win = parsed[(end - 7)..<end]
-            guard let s = stats(of: win) else { continue }
-            let endDay = parsed[end - 1]
-            let avgRec = Int((win.map { Double($0.recovery) }.reduce(0, +) / Double(win.count)).rounded())
-            cvHistory.append(TrendPoint(date: endDay.date, label: endDay.label,
-                                        cv: s.cv, avgRecovery: avgRec))
-        }
-        if cvHistory.count > 14 { cvHistory = Array(cvHistory.suffix(14)) }
 
         // Nightly HRV series with a rolling baseline (trailing up to 7 nights),
         // for the evidence chart — the last 14 nights.
@@ -225,7 +197,7 @@ enum HRVCalculator {
         return HRVCVResult(days: window, mean: current.mean, sd: current.sd,
                            cv: current.cv, window: windowLabel,
                            previousCV: previousCV, previousMean: previousMean,
-                           cvHistory: cvHistory, hrvSeries: hrvSeries, avgRecovery: avgRecovery)
+                           hrvSeries: hrvSeries, avgRecovery: avgRecovery)
     }
 
     /// Sample mean, standard deviation, and coefficient of variation (%) for a set of nights.

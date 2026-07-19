@@ -62,17 +62,39 @@ Tiers (the raw CV scale, kept from WHOOP/literature): **Elite ≤8% · On Track 
 
 ### The gauge (`CVGauge`)
 This one went through a long feedback loop — rainbow → single-hue → neutral gray
-→ tier-colored → back and forth. **Current resolution (don't relitigate without
-reason):** a speedometer with **three zone bands** (Elite green / On Track green-muted
-/ Elevated amber), the band you're in **lit**, others receded; numeric marks at
-**8** and **15**; a **knob in the verdict color** at your value; and center text
-(HRV-CV %, verdict label) **in the verdict color**. So the *scale* states the fact
-(where you are) and the *color* states the meaning (what it implies). This lets
-"Elevated zone" + "LEVELING UP" coexist.
+→ tier-colored → back to neutral. **Current resolution (user-confirmed; don't
+relitigate):** the track is a **neutral gray ruler** — the user explicitly
+rejected zone-colored bands ("HRV-CV isn't about good or bad", and multiple hues
+on the arc read as unrefined). The segment problem ("what do the segments
+mean?") is solved by **labeling, not coloring**, speedometer-style: the track is
+drawn as **three sub-arcs with rounded caps**, separated by small breaks at 8
+and 15 that act as tick marks, with small **tertiary numerals tucked just inside
+the ring** beneath each break (`innerNumeral`). The half-break is computed from
+geometry — `g = (lw + 3) / (2πr)` — so the rounded caps (which extend `lw/2`
+past each trim point) leave a ~3pt sliver of panel. The fill breaks where the
+track breaks, caps matching. Rejected along the way: numerals floating *outside*
+the arc (not integrated); wide breaks with numerals *in* the arc line (chopped
+the sweep, read busy); and hairline seams sliced through a continuous arc
+(square-cut edges against the arc's rounded ends — no corner radii, unrefined).
+The **fill sweeps to the value in neutral ink** (`primary @ 0.32` over the `0.1`
+track) — a verdict-hued fill was tried and rejected: a mostly-full arc in a
+judgment color pre-attentively reads as "a lot of good/bad", the exact
+misreading the app exists to avoid. **"The instrument is ink; the reading is
+colored":** the verdict hue appears only in the knob, the center number, and
+the verdict label. The **knob** is a solid dot in the verdict hue with a
+panel-colored ring to lift it off the fill (user preferred filled over punched)
+— the one colored point on the instrument, marking the reading. The legend
+directly beneath (Elite ≤8 · On Track 8–15 · Elevated >15, **no colored dots**)
+is the ruler's key, tying back to the on-arc numerals — and it reads like a
+**segmented control**: the active tier sits in a quiet neutral chip
+(`primary @ 0.09`, radius 5.5) plus bold text. Added because knob position +
+bare bold text under-communicated "where you are on the ladder" (the tier is a
+fact, so it gets stated — in ink, never in judgment color).
 
-> Note: an earlier version used a fully **neutral** track (no zone colors) on the
-> logic that "CV has no intrinsic good/bad." That was later revised back toward
-> colored zones. If you're tempted to go neutral again, know it was tried.
+> The tier-colored-zones variant (green/green-muted/amber bands, lit active
+> zone, verdict-colored knob) was built and rejected by the user: different
+> colors for segments vs knob felt unrefined, and coloring the scale asserts a
+> good/bad reading the metric doesn't have. Color belongs to the verdict only.
 
 ### The evidence chart (`HRVBandChart`)
 Nightly HRV (dots + line) travelling through its **typical range** (a band = mean
@@ -92,9 +114,52 @@ sentence + SIGNALS + an (i) that opens the WHOOP HRV-CV article. Prose was
 deliberately **trimmed to one sentence** per verdict — the SIGNALS carry the rest.
 
 ### SIGNALS (`signalsList`)
-Three qualitative rows: **Baseline** (Rising/Steady/Falling), **Variability**
-(Tight/Expected/Elevated/Concerning by verdict), **Recovery** (Strong/Moderate/Low).
-Labels are `.tertiary`, values `.secondary` (softened so they don't shout).
+Three qualitative rows, written for a WHOOP user who doesn't know HRV-CV:
+**HRV baseline** (Rising/Steady/Falling — the 7-night average vs last week),
+**Night-to-night swing** (Widening/Steady/Settling — the week-over-week direction
+of the CV), **Recovery** (Strong/Moderate/Low — avg WHOOP recovery; context, not
+a verdict input). Labels are `.tertiary`, values `.secondary`; each row has a
+`.help` tooltip with the actual numbers (qualitative visible, telemetry on hover).
+
+Naming rules learned the hard way:
+- Never label the swing row **"Variability"** — to a WHOOP user that word IS HRV,
+  so "variability of the variability" reads as nonsense. "Night-to-night swing"
+  matches the verdict copy ("the wider swing is a step up").
+- Say "HRV baseline", not bare "Baseline" (baseline *of what?*).
+- Words state **facts** (directions), not judgments — the judgment is the tint,
+  and it's contextual: a **Widening** swing is `.secondary` while CV is in range
+  or the baseline is rising, amber only when elevated with a flat baseline, coral
+  when elevated with a falling baseline. The two HRV rows together *are* the
+  verdict logic (swing widening + baseline rising = leveling up), which is the
+  teaching moment of the block.
+- **Arrow glyphs = fact, tint = judgment** (settled after a full round trip:
+  arrows → dots → arrows). The arrows were removed once because they double-
+  encode the direction the word states and risk the "up = good" misreading; the
+  user liked them and asked for them back, with the semantics now explicit:
+  the arrow (and the word restating it) says which way the quantity moved; the
+  tint says how the app judges it — green good, amber watch, coral concern.
+  Neutral ("no judgment") is `primary @ 0.35` — dimmer than the value text, so
+  the hierarchy reads "colored glyph = the app has an opinion, faint glyph =
+  just context". Gray never means bad; bad is always coral. Recovery is a
+  level, not a direction, so it keeps a dot.
+  Under Differentiate Without Color the glyph becomes the judgment itself
+  (check / minus / ! / warning), so color is never the only judgment channel.
+  (The menu-bar arrow ban still stands — there, no word disambiguates.)
+
+### Accessibility (user requirement: never color-only)
+Color is always a **redundant** channel, never the sole one:
+- Facts live in words/numbers everywhere (verdict label + headline, signal words,
+  legend ranges, stat values, table percentages).
+- The active tier in the legend is **bold**, not just tinted.
+- Signal-row judgments honor **Differentiate Without Color**
+  (`accessibilityDifferentiateWithoutColor`): dots become glyphs
+  (✓ good / – neutral / ! watch / ⚠ concern). `HRVCV_A11Y=1` forces this
+  rendering in snapshots (the env key is read-only, so it can't be injected).
+- VoiceOver: the gauge is one element ("HRV CV 22.0 percent, Leveling up. In the
+  Elevated, over 15 percent range."), the evidence chart has a spoken summary
+  (`chartA11yLabel`), signal rows speak fact + judgment ("HRV baseline: Rising.
+  A good sign."), stat cells speak value + trend, recovery bars are hidden (the
+  row's % text carries the value), icon-only buttons are labeled.
 
 ### Stats row + 7-day table
 AVG HRV (with baseline-direction arrow), SPREAD (SD), RECOVERY (color-coded).
@@ -110,18 +175,25 @@ via an `NSColor(name:)` dynamic provider (brighter/more saturated in dark mode).
 red/yellow/green (≥67 green, 34–66 amber, <34 red) — matches WHOOP's own scale.
 
 ### Menu bar label (`MenuBarLabel`)
-Shows **`CV 22%`** as a **single `Text`**. Two hard-won lessons:
+Shows **`CV 22%` inside one outlined rounded-rect badge** (1.2pt stroke, corner
+radius 5.5, 11pt text; the whole label is encapsulated). The lineage: loose
+"CV" + filled capsule → whole-label filled badge → **outline** (user: the solid
+fill was too heavy in the bar). Rendered as **one template `NSImage`**
+(`isTemplate`, alpha = ink, `ImageRenderer` at 2x). Hard-won lessons:
 1. **No trend arrow.** An arrow (↗) asserts a good/bad *direction*, but (a) "up"
    for CV is exactly the ambiguity the app exists to resolve, and (b) the menu bar
    strips color so it *can't* honestly show the verdict. An arrow there is a claim
    it can't back up. ChatGPT flagged this as "not honest"; we agree.
-2. **One `Text`, not an HStack of two.** A status-bar label splits an HStack of
-   `Text`s unreliably and **dropped the number**, leaving a bare `CV`. Combining
-   into `Text("CV \(n)%")` fixed it. Don't re-split it.
-   - We prototyped glyphs (`SpreadGlyph` = spread-width bar, `MiniArc` = position
-     arc) and removed them: at ~16px they failed to register (read as "just the
-     number"). Text identity (`CV`) proved more reliable. Don't reintroduce a
-     glyph without a legibility plan.
+2. **One view, not an HStack of `Text`s.** A status-bar label splits multi-Text
+   layouts unreliably and once **dropped the number**, leaving a bare `CV`. A
+   single rendered image sidesteps splitting entirely and survives template
+   rendering (light/dark/tinted bars) — that's why the pill is an image, not
+   live SwiftUI shapes.
+   - We prototyped abstract glyphs (`SpreadGlyph` = spread-width bar, `MiniArc` =
+     position arc) and removed them: at ~16px they failed to register. The pill
+     passes the legibility bar because its content is literally the text.
+   - Snapshots emit the label alongside the popover (`<path>-menubar.png`) for
+     headless verification.
 
 ## 5. Ideas we explicitly rejected (so you don't re-propose them)
 
@@ -141,9 +213,17 @@ Shows **`CV 22%`** as a **single `Text`**. Two hard-won lessons:
   WHOOP is a **confidential client**, so token requests **must include
   `client_secret`**. Scope string: `offline read:recovery` (offline → refresh token).
 - **API:** WHOOP developer API **v2** (`/recovery`). **`limit` max is 25** (30 → HTTP 400).
-- **Secrets:** `Secrets.swift` is **git-ignored** and holds the real client secret;
+- **Secrets:** `Secrets.swift` is **git-ignored** and holds **both** the client ID
+  and client secret (one "your credentials" file for people building from source);
   `Secrets.swift.example` is the committed template. Verified only the `.example`
-  is tracked. Client **ID** is hardcoded in `WHOOPService.swift` (IDs aren't secret).
+  is tracked. `WHOOPConfig` reads both from `Secrets`.
+- **Dev hooks (`MockData.swift`):** `HRVCV_MOCK=1` runs the app on a built-in
+  14-night demo dataset (no WHOOP auth, no keychain, no network) — also useful as
+  a demo mode for people without an account. `HRVCV_SNAPSHOT=/path.png` renders
+  the popover to a PNG via `ImageRenderer` and exits (`HRVCV_LIGHT=1` for light
+  mode; dynamic `NSColor`s are resolved inside
+  `performAsCurrentDrawingAppearance`). Together they give headless UI
+  verification without clicking the menu bar.
 - **Keychain:** single consolidated item `whoop_tokens`,
   `kSecAttrAccessibleAfterFirstUnlock`, cached in `TokenStore`. (Repeated "Always
   Allow" prompts during dev are a code-signing artifact — set a signing Team to stop them.)
@@ -173,6 +253,10 @@ Shows **`CV 22%`** as a **single `Text`**. Two hard-won lessons:
   `gh repo create HRV-CV-Monitor --private --source=. --remote=origin --push`
 - Stale Xcode Issue-navigator errors clear with ⇧⌘K. `.onOpenURL` on a `Scene`
   doesn't compile; the app uses `ASWebAuthenticationSession` instead (no URL handler needed).
+- **codesign "resource fork / detritus" failures** in CLI builds: files written by
+  agent tooling carry `com.apple.provenance` xattrs that leak into the product.
+  Fix: `xattr -cr` the product (or sources) and re-sign, or build with
+  `CODE_SIGNING_ALLOWED=NO` and ad-hoc sign afterward. Xcode GUI builds are unaffected.
 
 ## 8. Open threads / possible future work
 
@@ -181,7 +265,8 @@ Shows **`CV 22%`** as a **single `Text`**. Two hard-won lessons:
   **confidence** signal. Agreed as a good direction, not yet built.
 - **Personalized "normal range"** instead of fixed 8/15 thresholds — needs more
   of the user's own history to compute.
-- `ServiceManagement` was recently imported — likely **launch-at-login** in progress.
+- **Launch at Login** shipped: a `Toggle` in the footer ⋯ menu backed by
+  `SMAppService.mainApp`.
 - A deeper "restraint pass" is mostly done; keep an eye on spacing rhythm if you add sections.
 
 ## 9. Working style the user expects

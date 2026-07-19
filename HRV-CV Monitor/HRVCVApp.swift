@@ -4,6 +4,10 @@ import SwiftUI
 struct HRVCVApp: App {
     @StateObject private var vm = HRVViewModel()
 
+    init() {
+        Snapshot.runIfRequested()   // dev hook, no-op unless HRVCV_SNAPSHOT is set
+    }
+
     var body: some Scene {
         MenuBarExtra {
             ContentView()
@@ -26,73 +30,42 @@ struct HRVCVApp: App {
 }
 
 // MARK: - Menu Bar Label
-// One glanceable thing: a tiny position arc + the value. No trend arrow — "up"
-// for CV is ambiguous (that's the whole point of the app), so it stays out of
-// the bar and the popover tells the story. Monochrome (the bar strips color).
+// "CV" plus the value in a pill, rendered as ONE template image. No trend
+// arrow — "up" for CV is ambiguous (that's the whole point of the app), so it
+// stays out of the bar and the popover tells the story.
+//
+// Why an image: the status bar splits multi-view labels unreliably (an HStack
+// of Texts once dropped the number), and template rendering strips color
+// anyway. A single NSImage with isTemplate sidesteps both — alpha is the ink,
+// so the pill knockout survives and adapts to light/dark/tinted menu bars.
 struct MenuBarLabel: View {
     let result: HRVCVResult
-    private var fill: CGFloat { CGFloat(min(max(result.cv / 30, 0), 1)) }
 
     var body: some View {
-        // Identity + metric in ONE Text — a status-bar label splits an HStack of
-        // Texts unreliably (the number can get dropped). No trend arrow: the bar
-        // can't show the verdict (colour is stripped) and "up" for CV is ambiguous.
-        Text("CV \(Int(result.cv.rounded()))%")
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
+        Image(nsImage: MenuBarLabel.render(cv: Int(result.cv.rounded())))
     }
-}
 
-// Stability glyph: a centered mark whose width = your spread (CV). Narrow = tight
-// (stable), wide = variable. Faint ticks mark the ≤15% target width; when your
-// mark grows past them, you're elevated. CV *is* spread, so this glyph is the metric.
-struct SpreadGlyph: View {
-    let normalized: CGFloat
-    var body: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height, cy = h / 2
-            let maxHalf = w / 2 - 1
-            let half = max(1.2, maxHalf * min(normalized, 1))
-            let bracket = maxHalf * CGFloat(15.0 / 30.0)
-            ZStack {
-                Capsule().fill(Color.primary.opacity(0.22))
-                    .frame(width: w, height: 1).position(x: w / 2, y: cy)
-                ForEach([-1.0, 1.0], id: \.self) { s in
-                    Rectangle().fill(Color.primary.opacity(0.4))
-                        .frame(width: 1, height: h)
-                        .position(x: w / 2 + CGFloat(s) * bracket, y: cy)
-                }
-                Capsule().fill(Color.primary)
-                    .frame(width: half * 2, height: 3.5).position(x: w / 2, y: cy)
-            }
-        }
-    }
-}
+    @MainActor
+    static func render(cv: Int) -> NSImage {
+        let label = (Text("CV ").font(.system(size: 11, weight: .semibold, design: .rounded))
+                     + Text("\(cv)%").font(.system(size: 11, weight: .bold, design: .rounded)))
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2.5)
+            .overlay(RoundedRectangle(cornerRadius: 5.5, style: .continuous)
+                .strokeBorder(lineWidth: 1.2))   // outlined badge, not a filled block
+            .foregroundStyle(.black)   // template images only use alpha; black previews cleanly
+            .fixedSize()
 
-// Tiny position gauge for the menu bar: a faint track with a solid fill to value.
-struct MiniArc: View {
-    let fill: CGFloat
-    var body: some View {
-        ZStack {
-            MiniArcShape().stroke(Color.primary.opacity(0.35),
-                                  style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
-            MiniArcShape().trim(from: 0, to: fill)
-                .stroke(Color.primary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+        let renderer = ImageRenderer(content: label)
+        renderer.scale = 2
+        guard let cg = renderer.cgImage else {
+            // Fallback: an empty template image; the popover still works.
+            return NSImage(size: NSSize(width: 1, height: 1))
         }
-    }
-}
-
-struct MiniArcShape: Shape {
-    func path(in rect: CGRect) -> Path {
-        Path { p in
-            let r = min(rect.width / 2, rect.height) - 1
-            let cx = rect.width / 2, cy = rect.height
-            let steps = 40
-            for i in 0...steps {
-                let deg = 180.0 + Double(i) / Double(steps) * 180.0
-                let rad = deg * .pi / 180
-                let pt = CGPoint(x: cx + CGFloat(cos(rad)) * r, y: cy + CGFloat(sin(rad)) * r)
-                if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
-            }
-        }
+        let image = NSImage(cgImage: cg,
+                            size: NSSize(width: CGFloat(cg.width) / 2,
+                                         height: CGFloat(cg.height) / 2))
+        image.isTemplate = true
+        return image
     }
 }

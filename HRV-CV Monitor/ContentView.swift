@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import AppKit
+import ServiceManagement
 
 // MARK: - View Model
 @MainActor
@@ -15,9 +16,23 @@ final class HRVViewModel: ObservableObject {
     private var timer   : Timer?
 
     init() {
+        if MockData.isEnabled {
+            result      = HRVCalculator.calculate(from: MockData.records())
+            isAuthed    = true
+            lastUpdated = Date()
+            return
+        }
+
         isAuthed = service.isAuthenticated
         if isAuthed { Task { await load() } }
         scheduleRefresh()
+
+        // Refresh after the Mac wakes — the hourly timer doesn't fire during sleep.
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { await self?.loadIfStale() }
+        }
     }
 
     func signIn() async {
@@ -36,7 +51,7 @@ final class HRVViewModel: ObservableObject {
     }
 
     func load() async {
-        guard isAuthed else { return }
+        guard isAuthed, !MockData.isEnabled else { return }
         isLoading = true
         error = nil
         do {
@@ -49,6 +64,13 @@ final class HRVViewModel: ObservableObject {
             if case WHOOPError.unauthorized = error { isAuthed = false }
         }
         isLoading = false
+    }
+
+    /// Reloads only if the data is older than 15 minutes (cheap to call often).
+    func loadIfStale() async {
+        guard isAuthed, !isLoading else { return }
+        if let t = lastUpdated, Date().timeIntervalSince(t) < 900 { return }
+        await load()
     }
 
     func signOut() {
@@ -88,11 +110,17 @@ let tierRed   = adaptiveTier(light: (0.84, 0.46, 0.40), dark: (0.94, 0.57, 0.52)
 let popoverBackground = adaptiveTier(light: (0.96, 0.96, 0.97), dark: (0.12, 0.12, 0.13))
 
 // MARK: - Arc Gauge
+// A neutral ruler with a verdict-colored reading. The track is deliberately NOT
+// colour-coded: HRV-CV has no intrinsic good/bad (that ambiguity is the app's
+// whole point), so the scale states only the fact. The "8" and "15" numerals sit
+// in the boundary breaks of the arc itself, like dial graduations, so the
+// segments are labeled without leaving the gauge. One hue total: the fill, knob
+// ring, and center text all carry the verdict color — the interpretation.
 struct CVGauge: View {
     let cv: Double
-    let accent: Color   // verdict color (leads with meaning, not raw tier)
-    let label: String   // verdict label, e.g. "TRANSITIONING"
-    private let maxCV: Double = 30   // 30% fills the arc fully
+    let accent: Color   // verdict color (the interpretation)
+    let label: String   // verdict label, e.g. "LEVELING UP"
+    private let maxCV: Double = 30   // right end of the scale
 
     private var normalized: Double { min(max(cv / maxCV, 0), 1.0) }
 
@@ -106,38 +134,53 @@ struct CVGauge: View {
             let lw : CGFloat = 9
             let b1 = 8.0 / maxCV                 // Elite / On-Track boundary
             let b2 = 15.0 / maxCV                // On-Track / Elevated boundary
-            let g  = 0.02                        // half-gap at each boundary
             let stroke = StrokeStyle(lineWidth: lw, lineCap: .round)
 
+            // Half-break sized so the rounded caps (which extend lw/2 past each
+            // trim point) leave a ~3pt sliver of panel between segments.
+            let g = Double((lw + 3) / (2 * .pi * r))
+
             ZStack {
-                // Neutral track — a calm ruler. CV has no intrinsic good/bad, so the
-                // scale isn't colour-coded; the boundary gaps still mark 8% and 15%.
+                // Neutral track: three sub-arcs with rounded ends. The small
+                // breaks at 8 and 15 are the tick marks, and every segment end
+                // gets the same round cap as the ends of the arc itself.
                 Group {
                     seg(0,      b1 - g, cx, cy, r).stroke(Color.primary.opacity(0.1), style: stroke)
                     seg(b1 + g, b2 - g, cx, cy, r).stroke(Color.primary.opacity(0.1), style: stroke)
                     seg(b2 + g, 1,      cx, cy, r).stroke(Color.primary.opacity(0.1), style: stroke)
                 }
 
-                // Fill up to the value in a single verdict hue — position (how far)
-                // and judgment (the colour) together, with no traffic-light clash.
+                // Fill to the value in neutral ink — the sweep answers only
+                // "how far along the ruler". A judgment hue here would make a
+                // mostly-full arc read as "a lot of good/bad", which is exactly
+                // the misreading this gauge exists to avoid. The verdict colour
+                // lives only in the reading: knob ring, number, label. The fill
+                // breaks where the track breaks, caps matching.
+                let fillInk = Color.primary.opacity(0.32)
                 Group {
                     if normalized > 0 {
-                        seg(0, min(b1 - g, normalized), cx, cy, r).stroke(accent, style: stroke)
+                        seg(0, min(b1 - g, normalized), cx, cy, r).stroke(fillInk, style: stroke)
                     }
                     if normalized > b1 + g {
-                        seg(b1 + g, min(b2 - g, normalized), cx, cy, r).stroke(accent, style: stroke)
+                        seg(b1 + g, min(b2 - g, normalized), cx, cy, r).stroke(fillInk, style: stroke)
                     }
                     if normalized > b2 + g {
-                        seg(b2 + g, min(1, normalized), cx, cy, r).stroke(accent, style: stroke)
+                        seg(b2 + g, min(1, normalized), cx, cy, r).stroke(fillInk, style: stroke)
                     }
                 }
 
-                // Knob at the value
+                // Threshold numerals tucked just inside the ring, under the seams.
+                innerNumeral("8",  at: b1, cx: cx, cy: cy, r: r - lw / 2 - 9)
+                innerNumeral("15", at: b2, cx: cx, cy: cy, r: r - lw / 2 - 9)
+
+                // Knob at the value: a solid dot in the verdict hue with a
+                // panel-colored ring to lift it off the fill — the one colored
+                // point on the instrument, marking the reading.
                 let pt = arcPoint(n: normalized, cx: cx, cy: cy, r: r)
                 Circle()
-                    .fill(popoverBackground)
-                    .overlay(Circle().stroke(Color.primary, lineWidth: 2.5))  // white ring, pops over the fill
-                    .frame(width: 13, height: 13)
+                    .fill(accent)
+                    .overlay(Circle().stroke(popoverBackground, lineWidth: 2.5))
+                    .frame(width: 14, height: 14)
                     .position(pt)
 
                 // Metric + value + verdict, centered in the bowl
@@ -159,7 +202,26 @@ struct CVGauge: View {
             }
         }
         .frame(height: 124)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(a11yLabel)
     }
+
+    private var a11yLabel: String {
+        let zone = cv <= 8 ? "Elite, 8 percent or less"
+                 : cv <= 15 ? "On Track, 8 to 15 percent"
+                 : "Elevated, over 15 percent"
+        return "HRV CV \(String(format: "%.1f", cv)) percent, \(label). In the \(zone) range."
+    }
+
+    // A small threshold numeral just inside the ring, beneath its seam.
+    private func innerNumeral(_ text: String, at n: Double,
+                              cx: CGFloat, cy: CGFloat, r: CGFloat) -> some View {
+        Text(text)
+            .font(.system(size: 7.5, weight: .medium, design: .rounded))
+            .foregroundStyle(.tertiary)
+            .position(arcPoint(n: n, cx: cx, cy: cy, r: r))
+    }
+
 
     // Upper semicircle as a Shape so the fill can be trimmed to the value.
     struct ArcShape: Shape {
@@ -326,6 +388,7 @@ struct ContentView: View {
         .frame(width: 310)
         .padding(16)
         .background(popoverBackground)
+        .onAppear { Task { await vm.loadIfStale() } }
     }
 }
 
@@ -396,6 +459,13 @@ struct DashboardView: View {
     let result: HRVCVResult
     @EnvironmentObject var vm: HRVViewModel
     @State private var trendHover: Int?
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
+    // HRVCV_A11Y=1 forces the no-color rendering (the env key is read-only, so
+    // snapshots can't inject it; this dev flag previews what the setting shows).
+    private var differentiateWithoutColor: Bool {
+        systemDifferentiateWithoutColor
+            || ProcessInfo.processInfo.environment["HRVCV_A11Y"] == "1"
+    }
 
     var body: some View {
         // While scrubbing the chart you're time-travelling — dim today's verdict
@@ -406,15 +476,16 @@ struct DashboardView: View {
             // Chart unit: the gauge, its trajectory, and the scale, grouped tightly.
             // Only the dimmed pieces animate — never the chart (avoids scrub jitter).
             VStack(spacing: 10) {
-                CVGauge(cv: result.cv,
-                        accent: verdictColor(result.verdict),
-                        label: result.verdictLabel)
-                    .opacity(scrubbing ? 0.4 : 1)
-                    .animation(.easeInOut(duration: 0.15), value: scrubbing)
+                VStack(spacing: 6) {
+                    CVGauge(cv: result.cv,
+                            accent: verdictColor(result.verdict),
+                            label: result.verdictLabel)
+                        .help("Your 7-night HRV consistency (\(result.window)). Lower is better: ≤8% elite, ≤15% on track.")
+                    zoneLegend
+                }
+                .opacity(scrubbing ? 0.4 : 1)
+                .animation(.easeInOut(duration: 0.15), value: scrubbing)
                 trendChart
-                zoneLegend
-                    .opacity(scrubbing ? 0.4 : 1)
-                    .animation(.easeInOut(duration: 0.15), value: scrubbing)
             }
             statusCard
                 .opacity(scrubbing ? 0.4 : 1)
@@ -458,6 +529,8 @@ struct DashboardView: View {
                              tint: verdictColor(result.verdict),
                              hoverIndex: $trendHover)
                     .frame(height: 76)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(chartA11yLabel(s))
                 HStack {
                     Text(s.first?.label ?? "")
                     Spacer()
@@ -467,6 +540,16 @@ struct DashboardView: View {
                 .foregroundStyle(.tertiary)
             }
         }
+    }
+
+    // Spoken summary of the evidence chart for VoiceOver.
+    func chartA11yLabel(_ s: [HRVSeriesPoint]) -> String {
+        var text = "Nightly HRV chart, \(s.count) nights, \(s.first?.label ?? "") to \(s.last?.label ?? "")."
+        if let d = result.baselineDeltaMs, abs(d) >= 1 {
+            text += String(format: " Baseline %@ %.0f milliseconds versus last week.",
+                           d > 0 ? "up" : "down", abs(d))
+        }
+        return text
     }
 
     // Live readout for a hovered night: date, HRV, and that night's recovery.
@@ -526,44 +609,13 @@ struct DashboardView: View {
             }
             .buttonStyle(.plain)
             .help("What is HRV-CV?")
+            .accessibilityLabel("Learn more about HRV-CV")
         }
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(accent.opacity(0.08))
         )
-    }
-
-    // Live readout: the hovered point's date, HRV-CV (colored by that point's
-    // tier), and average WHOOP recovery over its 7-night window.
-    func trendReadout(_ pt: TrendPoint) -> some View {
-        HStack(spacing: 6) {
-            Text(pt.label).foregroundStyle(.secondary)
-            Text(String(format: "HRV-CV %.1f%%", pt.cv))
-                .foregroundStyle(tierColor(forCV: pt.cv))
-            Spacer(minLength: 4)
-            Text("\(pt.avgRecovery)% avg recovery").foregroundStyle(.tertiary)
-        }
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
-    }
-
-    // Week-over-week summary shown in the trend-card header.
-    @ViewBuilder
-    var trendSummary: some View {
-        if let delta = result.trendDelta {
-            let worse = delta > 0.5, better = delta < -0.5
-            let symbol = worse ? "arrow.up.right" : better ? "arrow.down.right" : "arrow.right"
-            let tint: Color = worse ? tierRed : better ? tierGreen : .secondary
-            let text = abs(delta) <= 0.5
-                ? "Steady vs last week"
-                : String(format: "%@ %.1f pts vs last week", worse ? "Up" : "Down", abs(delta))
-            HStack(spacing: 3) {
-                Image(systemName: symbol).font(.system(size: 8, weight: .bold))
-                Text(text)
-            }
-            .font(.system(size: 10, weight: .semibold))
-            .foregroundStyle(tint)
-        }
     }
 
     // MARK: Status callout: headline + detail in a quietly tinted card,
@@ -581,65 +633,140 @@ struct DashboardView: View {
                 .padding(.top, 3)
             VStack(spacing: 3) {
                 baselineSignalRow
-                variabilitySignalRow
+                swingSignalRow
                 recoverySignalRow
             }
             .padding(.top, 2)
         }
     }
 
+    // The app's read on one signal. Rendered as a colored dot by default, as a
+    // distinct glyph when the system asks to differentiate without color, and
+    // spoken as words by VoiceOver — never color alone.
+    enum SignalJudgment {
+        case good, neutral, watch, concern
+
+        // Neutral is deliberately the quietest thing in the row (dimmer than
+        // the value text): a colored glyph means "the app has an opinion",
+        // a faint one means "just context". Gray never means bad — bad is coral.
+        var tint: Color {
+            switch self {
+            case .good:    return tierGreen
+            case .neutral: return Color.primary.opacity(0.35)
+            case .watch:   return tierAmber
+            case .concern: return tierRed
+            }
+        }
+        var symbol: String {
+            switch self {
+            case .good:    return "checkmark"
+            case .neutral: return "minus"
+            case .watch:   return "exclamationmark"
+            case .concern: return "exclamationmark.triangle.fill"
+            }
+        }
+        var spoken: String {
+            switch self {
+            case .good:    return "A good sign."
+            case .neutral: return ""
+            case .watch:   return "Worth watching."
+            case .concern: return "Concerning."
+            }
+        }
+    }
+
+    // Your average HRV level, week over week. "HRV baseline", not "Baseline":
+    // a WHOOP user thinks in HRV ms, so name the thing being averaged.
     var baselineSignalRow: some View {
         let bd = result.baselineDeltaMs ?? 0
-        let sym: String, tint: Color, word: String
-        if bd > 3        { sym = "arrow.up";    tint = tierGreen; word = "Rising" }
-        else if bd < -3  { sym = "arrow.down";  tint = tierRed;   word = "Falling" }
-        else             { sym = "arrow.right"; tint = .secondary; word = "Steady" }
-        return signalRow(sym: sym, tint: tint, label: "Baseline", value: word)
+        let judgment: SignalJudgment, word: String, sym: String
+        if bd > 3        { judgment = .good;    word = "Rising";  sym = "arrow.up" }
+        else if bd < -3  { judgment = .concern; word = "Falling"; sym = "arrow.down" }
+        else             { judgment = .neutral; word = "Steady";  sym = "arrow.right" }
+        return signalRow(judgment: judgment, symbol: sym, label: "HRV baseline", value: word)
+            .help(result.previousMean.map {
+                String(format: "Average nightly HRV: %.1f ms this week, %.1f ms last week.",
+                       result.mean, $0)
+            } ?? "")
     }
 
-    var variabilitySignalRow: some View {
-        let td = result.trendDelta ?? 0
-        let sym = td > 0.5 ? "arrow.up" : td < -0.5 ? "arrow.down" : "arrow.right"
-        let tint: Color, word: String
-        switch result.verdict {
-        case .elite, .onTrack: tint = tierGreen;  word = "Tight"
-        case .levelingUp:      tint = .secondary; word = "Expected"
-        case .elevated:        tint = tierAmber;  word = "Elevated"
-        case .destabilizing:   tint = tierRed;    word = "Concerning"
+    // The night-to-night spread of HRV (what HRV-CV measures), as a direction.
+    // Never "Variability": to a WHOOP user that word IS HRV. The word states the
+    // fact; the tint says whether it's concerning in context. A widening swing
+    // is only colored when CV is elevated, and even then the baseline decides:
+    // rising = expected (leveling up), flat = caution, falling = warning.
+    var swingSignalRow: some View {
+        let delta = result.trendDelta ?? 0
+        let widening = delta > 0.5, settling = delta < -0.5
+        let word = widening ? "Widening" : settling ? "Settling" : "Steady"
+        let sym  = widening ? "arrow.up" : settling ? "arrow.down" : "arrow.right"
+        let judgment: SignalJudgment
+        if settling                      { judgment = .good }
+        else if !widening                { judgment = .neutral }
+        else if result.tier != .reducing { judgment = .neutral }
+        else {
+            switch result.baselineDirection {
+            case .some(1):  judgment = .neutral
+            case .some(-1): judgment = .concern
+            default:        judgment = .watch
+            }
         }
-        return signalRow(sym: sym, tint: tint, label: "Variability", value: word)
+        return signalRow(judgment: judgment, symbol: sym, label: "Night-to-night swing", value: word)
+            .help(result.previousCV.map {
+                String(format: "HRV-CV: %.1f%% this week, %.1f%% last week.", result.cv, $0)
+            } ?? "")
     }
 
+    // Context, not an input to the verdict: does WHOOP's own recovery score
+    // agree with the HRV story?
     var recoverySignalRow: some View {
         let r = result.avgRecovery
+        let judgment: SignalJudgment = r >= 67 ? .good : r >= 34 ? .watch : .concern
         let word = r >= 67 ? "Strong" : r >= 34 ? "Moderate" : "Low"
-        return signalRow(sym: nil, tint: recoveryColor(r), label: "Recovery", value: word)
+        return signalRow(judgment: judgment, label: "Recovery", value: word)
+            .help("Average WHOOP recovery across the 7 nights: \(r)%.")
     }
 
-    func signalRow(sym: String?, tint: Color, label: String, value: String) -> some View {
+    // One row of the reasoning: a glyph + a factual word. Two clean channels:
+    // the arrow (and the word, which restates it) is the FACT — which way that
+    // quantity moved; the tint is the JUDGMENT — green good, amber watch, coral
+    // concern, gray informational. Recovery is a level, not a direction, so it
+    // gets a dot. When the system asks to differentiate without color, the
+    // glyph becomes the judgment itself (check / minus / ! / warning); VoiceOver
+    // speaks fact + judgment in words.
+    func signalRow(judgment: SignalJudgment, symbol: String? = nil,
+                   label: String, value: String) -> some View {
         HStack(spacing: 7) {
             Group {
-                if let sym {
-                    Image(systemName: sym).font(.system(size: 8, weight: .bold))
+                if differentiateWithoutColor {
+                    Image(systemName: judgment.symbol)
+                        .font(.system(size: 7, weight: .bold))
+                } else if let symbol {
+                    Image(systemName: symbol)
+                        .font(.system(size: 8, weight: .bold))
                 } else {
                     Circle().frame(width: 5, height: 5)
                 }
             }
-            .foregroundStyle(tint)
+            .foregroundStyle(judgment.tint)
             .frame(width: 10)
             Text(label).foregroundStyle(.tertiary)
             Spacer()
             Text(value).foregroundStyle(.secondary)
         }
         .font(.system(size: 9.5, weight: .medium, design: .rounded))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(value). \(judgment.spoken)")
     }
 
-    // Verdict color: green = doing well / leveling up, amber = fine, coral = watch out.
+    // Verdict color = severity: green when things are good (elite, on track, or a
+    // rising baseline explaining the swing), amber for elevated-but-stable, coral
+    // only for the true warning (destabilizing).
     func verdictColor(_ v: HRVCVResult.Verdict) -> Color {
         switch v {
-        case .elite, .levelingUp:       return tierGreen
-        case .onTrack:                  return tierAmber
-        case .elevated, .destabilizing: return tierRed
+        case .elite, .onTrack, .levelingUp: return tierGreen
+        case .elevated:                     return tierAmber
+        case .destabilizing:                return tierRed
         }
     }
 
@@ -649,18 +776,19 @@ struct DashboardView: View {
         }
     }
 
-    // MARK: Tier scale: only the current tier lights up
+    // MARK: Tier scale — the gauge's key, directly beneath it. A neutral
+    // reference ladder (never colored — color belongs to the verdict), read
+    // like a segmented control: a quiet chip marks the tier you're in, so
+    // "where you are on the ladder" is stated, not inferred from the knob.
     var zoneLegend: some View {
-        HStack(spacing: 14) {
-            tierMark("Elite", "≤8", tier: .elite)
-            tierMark("On Track", "≤15", tier: .target)
-            tierMark("Elevated", ">15", tier: .reducing)
+        HStack(spacing: 6) {
+            tierMark("Elite",    "≤8",   tier: .elite)
+            tierMark("On Track", "8–15", tier: .target)
+            tierMark("Elevated", ">15",  tier: .reducing)
         }
         .frame(maxWidth: .infinity)
     }
 
-    // Neutral reference scale (a goal ladder, not a verdict) — the active zone
-    // is just emphasized, never colored. Color belongs to the interpretation.
     func tierMark(_ name: String, _ range: String, tier: HRVCVResult.Tier) -> some View {
         let active = result.tier == tier
         return HStack(spacing: 4) {
@@ -671,21 +799,14 @@ struct DashboardView: View {
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundStyle(.tertiary)
         }
-    }
-
-    func tierColor(_ tier: HRVCVResult.Tier) -> Color {
-        switch tier {
-        case .elite:    return tierGreen
-        case .target:   return tierAmber
-        case .reducing: return tierRed
+        .padding(.horizontal, 7)
+        .padding(.vertical, 3.5)
+        .background {
+            if active {
+                RoundedRectangle(cornerRadius: 5.5, style: .continuous)
+                    .fill(Color.primary.opacity(0.09))
+            }
         }
-    }
-
-    // Tier color for a raw CV value (used by the sparkline hover).
-    func tierColor(forCV cv: Double) -> Color {
-        if cv <= 8  { return tierGreen }
-        if cv <= 15 { return tierAmber }
-        return tierRed
     }
 
     // MARK: Stats row
@@ -723,6 +844,12 @@ struct DashboardView: View {
                 .foregroundStyle(.tertiary)
         }
         .help(help)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel({
+            var text = "\(label): \(value)."
+            if let t = trend, t != 0 { text += t > 0 ? " Up versus last week." : " Down versus last week." }
+            return text
+        }())
     }
 
     // MARK: Day table
@@ -773,6 +900,7 @@ struct DashboardView: View {
             }
         }
         .frame(height: 5)
+        .accessibilityHidden(true)   // the row's % text carries the value
     }
 
     // MARK: Footer
@@ -791,8 +919,16 @@ struct DashboardView: View {
             }
             .buttonStyle(.plain)
             .disabled(vm.isLoading)
+            .accessibilityLabel("Refresh")
 
             Menu {
+                Toggle("Launch at Login", isOn: Binding(
+                    get: { SMAppService.mainApp.status == .enabled },
+                    set: { on in
+                        try? on ? SMAppService.mainApp.register()
+                                : SMAppService.mainApp.unregister()
+                    }))
+                Divider()
                 Button("Sign out", action: vm.signOut)
                 Divider()
                 Button("Quit HRV-CV Monitor") { NSApp.terminate(nil) }
@@ -805,6 +941,7 @@ struct DashboardView: View {
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .frame(width: 20)
+            .accessibilityLabel("More options")
         }
     }
 }

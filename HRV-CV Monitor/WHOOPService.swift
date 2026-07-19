@@ -6,12 +6,11 @@ import CryptoKit
 import Security
 
 // MARK: - Configuration
-// Replace clientId with your WHOOP Developer App client ID.
-// Register at: https://developer.whoop.com
-// Set redirect URI in your WHOOP app to: hrvcv://callback
+// Your WHOOP Developer App credentials live in the git-ignored Secrets.swift
+// (see Secrets.swift.example). Register at: https://developer.whoop.com with
+// redirect URI: hrvcv://callback
 enum WHOOPConfig {
-    static let clientId     = "9fecb9c8-937f-4bfc-b354-00621bdafed5"
-    // Client Secret lives in the git-ignored Secrets.swift (see Secrets.swift.example).
+    static let clientId     = Secrets.whoopClientId
     static let clientSecret = Secrets.whoopClientSecret
     static let redirectURI  = "hrvcv://callback"
     static let authBaseURL  = "https://api.prod.whoop.com/oauth/oauth2/auth"
