@@ -1,50 +1,50 @@
 import Foundation
 
 // MARK: - HRV Day
-struct HRVDay: Identifiable {
-    let id        = UUID()
-    let date      : Date
-    let label     : String   // e.g. "Jul 16"
-    let hrv       : Double   // rMSSD in ms
-    let recovery  : Int      // 0–100
+public struct HRVDay: Identifiable {
+    public let id        = UUID()
+    public let date      : Date
+    public let label     : String   // e.g. "Jul 16"
+    public let hrv       : Double   // rMSSD in ms
+    public let recovery  : Int      // 0–100
 }
 
 // MARK: - HRV Series Point
 // One night of the evidence chart: the nightly HRV plus the rolling baseline
 // (mean) and spread (sd) over the trailing week — the "expected range".
-struct HRVSeriesPoint: Identifiable {
-    let id = UUID()
-    let date     : Date
-    let label    : String
-    let hrv      : Double
-    let mean     : Double   // rolling baseline
-    let sd       : Double   // rolling spread (half the expected range)
-    let recovery : Int
+public struct HRVSeriesPoint: Identifiable {
+    public let id = UUID()
+    public let date     : Date
+    public let label    : String
+    public let hrv      : Double
+    public let mean     : Double   // rolling baseline
+    public let sd       : Double   // rolling spread (half the expected range)
+    public let recovery : Int
 }
 
 // MARK: - CV Result
-struct HRVCVResult {
-    let days    : [HRVDay]   // 7 days, oldest first
-    let mean    : Double
-    let sd      : Double
-    let cv      : Double     // percentage
-    let window  : String     // e.g. "Jul 10 – Jul 16"
-    let previousCV   : Double?  // 7-night CV for the prior week, if available
-    let previousMean : Double?  // 7-night mean HRV for the prior week, if available
-    let hrvSeries    : [HRVSeriesPoint] // nightly HRV + rolling baseline, for the evidence chart
-    let avgRecovery  : Int          // average WHOOP recovery over the window
+public struct HRVCVResult {
+    public let days    : [HRVDay]   // 7 days, oldest first
+    public let mean    : Double
+    public let sd      : Double
+    public let cv      : Double     // percentage
+    public let window  : String     // e.g. "Jul 10 – Jul 16"
+    public let previousCV   : Double?  // 7-night CV for the prior week, if available
+    public let previousMean : Double?  // 7-night mean HRV for the prior week, if available
+    public let hrvSeries    : [HRVSeriesPoint] // nightly HRV + rolling baseline, for the evidence chart
+    public let avgRecovery  : Int          // average WHOOP recovery over the window
 
-    var cvFormatted   : String { String(format: "%.1f%%", cv) }
-    var meanFormatted : String { String(format: "%.1f ms", mean) }
-    var sdFormatted   : String { String(format: "%.1f ms", sd) }
+    public var cvFormatted   : String { String(format: "%.1f%%", cv) }
+    public var meanFormatted : String { String(format: "%.1f ms", mean) }
+    public var sdFormatted   : String { String(format: "%.1f ms", sd) }
 
-    var tier: Tier {
+    public var tier: Tier {
         if cv <= 8  { return .elite }
         if cv <= 15 { return .target }
         return .reducing
     }
 
-    enum Tier: String {
+    public enum Tier: String {
         case elite    = "Elite"
         case target   = "On Track"
         case reducing = "Elevated"
@@ -53,9 +53,9 @@ struct HRVCVResult {
     // Combined verdict: the HRV-CV tier read together with the baseline direction.
     // This is what makes "elevated" meaningful — a wider swing while the baseline
     // rises is leveling up (good); while it falls is destabilizing (a warning).
-    enum Verdict { case elite, onTrack, levelingUp, elevated, destabilizing }
+    public enum Verdict { case elite, onTrack, levelingUp, elevated, destabilizing }
 
-    var verdict: Verdict {
+    public var verdict: Verdict {
         switch tier {
         case .elite:  return .elite
         case .target: return .onTrack
@@ -69,7 +69,7 @@ struct HRVCVResult {
     }
 
     /// Short status headline for the current verdict.
-    var statusHeadline: String {
+    public var statusHeadline: String {
         switch verdict {
         case .elite:         return "Elite consistency"
         case .onTrack:       return "On track"
@@ -80,7 +80,7 @@ struct HRVCVResult {
     }
 
     /// One-line explanation and next step for the current verdict.
-    var statusDetail: String {
+    public var statusDetail: String {
         switch verdict {
         case .elite:
             return "Your HRV is remarkably steady night to night."
@@ -97,12 +97,12 @@ struct HRVCVResult {
 
     // Week-over-week change of the CV vs the prior 7-night window (signed).
     // Lower CV is better, so negative = improving.
-    var trendDelta: Double? { previousCV.map { cv - $0 } }
+    public var trendDelta: Double? { previousCV.map { cv - $0 } }
 
     // Direction of the HRV baseline (mean) vs the prior week: +1 up (better),
     // -1 down, 0 flat. Reading CV alongside this resolves the "rising CV is bad?"
     // ambiguity — CV up with baseline up is levelling up, not destabilising.
-    var baselineDirection: Int? {
+    public var baselineDirection: Int? {
         guard let pm = previousMean else { return nil }
         let d = mean - pm
         if d >  1 { return  1 }
@@ -111,10 +111,10 @@ struct HRVCVResult {
     }
 
     /// HRV baseline change vs the prior week, in ms (signed).
-    var baselineDeltaMs: Double? { previousMean.map { mean - $0 } }
+    public var baselineDeltaMs: Double? { previousMean.map { mean - $0 } }
 
     /// Short, verdict-forward label for the gauge (leads with meaning).
-    var verdictLabel: String {
+    public var verdictLabel: String {
         switch verdict {
         case .elite:         return "ELITE"
         case .onTrack:       return "ON TRACK"
@@ -126,11 +126,11 @@ struct HRVCVResult {
 }
 
 // MARK: - Calculator
-enum HRVCalculator {
+public enum HRVCalculator {
 
     /// Returns the HRV-CV result for the most recent valid 7-night consecutive window,
     /// or nil if fewer than 7 valid records are available.
-    static func calculate(from records: [Recovery]) -> HRVCVResult? {
+    public static func calculate(from records: [Recovery]) -> HRVCVResult? {
         let isoFull = ISO8601DateFormatter()
         isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 

@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		238FB1290D259D958AECD3FB /* HRVCVCore in Frameworks */ = {isa = PBXBuildFile; productRef = 128BFACC517D19F64FAB470E /* HRVCVCore */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		C0EE42DB300BF6E900A963E2 /* HRV-CV Monitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "HRV-CV Monitor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +27,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				238FB1290D259D958AECD3FB /* HRVCVCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +70,7 @@
 			);
 			name = "HRV-CV Monitor";
 			packageProductDependencies = (
+				128BFACC517D19F64FAB470E /* HRVCVCore */,
 			);
 			productName = "HRV-CV Monitor";
 			productReference = C0EE42DB300BF6E900A963E2 /* HRV-CV Monitor.app */;
@@ -94,6 +100,9 @@
 			);
 			mainGroup = C0EE42D2300BF6E900A963E2;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2B1E950B91958614D309C591 /* XCLocalSwiftPackageReference "HRVCVCore" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = C0EE42DC300BF6E900A963E2 /* Products */;
 			projectDirPath = "";
@@ -123,6 +132,21 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		2B1E950B91958614D309C591 /* XCLocalSwiftPackageReference "HRVCVCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = HRVCVCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		128BFACC517D19F64FAB470E /* HRVCVCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2B1E950B91958614D309C591 /* XCLocalSwiftPackageReference "HRVCVCore" */;
+			productName = HRVCVCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C0EE42E4300BF6EB00A963E2 /* Debug */ = {
@@ -252,6 +276,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				"INFOPLIST_KEY_LSUIElement[sdk=macosx*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;
@@ -296,6 +321,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				"INFOPLIST_KEY_LSUIElement[sdk=macosx*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents[sdk=iphoneos*]" = YES;

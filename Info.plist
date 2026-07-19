@@ -2,9 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- Menu-bar-only agent: no Dock icon, no ⌘-Tab entry -->
-	<key>LSUIElement</key>
-	<true/>
 	<!-- OAuth redirect: routes hrvcv://callback back into the app -->
 	<key>CFBundleURLTypes</key>
 	<array>

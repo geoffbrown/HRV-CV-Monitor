@@ -1,5 +1,5 @@
 # Local secrets — never commit
-HRV-CV Monitor/Secrets.swift
+HRVCVCore/Sources/HRVCVCore/Secrets.swift
 
 # macOS
 .DS_Store
@@ -9,3 +9,7 @@ xcuserdata/
 *.xcuserstate
 build/
 DerivedData/
+
+# Swift Package Manager
+HRVCVCore/.build/
+HRVCVCore/.swiftpm/

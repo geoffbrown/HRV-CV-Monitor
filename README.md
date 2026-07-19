@@ -31,8 +31,13 @@ the call.
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel), Xcode 16+
+- macOS (Apple Silicon or Intel) or iOS 16+, Xcode 16+
 - A WHOOP account and a WHOOP developer app
+
+The project is a single multiplatform Xcode target: the same app builds and
+runs as a macOS menu bar app or an iPhone app depending on the destination you
+pick in Xcode, sharing the WHOOP auth/networking and HRV-CV logic via the
+local `HRVCVCore` Swift package.
 
 ## Setup
 
@@ -43,20 +48,23 @@ the call.
 
 2. **Add your credentials** (kept out of git):
    ```sh
-   cp Secrets.swift.example "HRV-CV Monitor/Secrets.swift"
-   # then paste your Client ID and Client Secret into HRV-CV Monitor/Secrets.swift
+   cp HRVCVCore/Sources/HRVCVCore/Secrets.swift.example HRVCVCore/Sources/HRVCVCore/Secrets.swift
+   # then paste your Client ID and Client Secret into that new Secrets.swift
    ```
    `Secrets.swift` is git-ignored, so your credentials never land in the repo.
+   Both the macOS and iOS builds read from this one file.
 
 3. **Open, sign, and run** in Xcode:
    - Open `HRV-CV Monitor.xcodeproj`
    - Target → **Signing & Capabilities** → pick your **Team** (a free Apple ID
      works). A stable signing identity keeps macOS from re-prompting for keychain
      access on every rebuild.
-   - **Run** (⌘R). Find the heart / `CV …%` item in the menu bar and click
-     **Connect WHOOP**.
+   - Pick a destination — **My Mac** for the menu bar app, or an iPhone/
+     Simulator for the iOS app — and **Run** (⌘R).
+   - On macOS: find the heart / `CV …%` item in the menu bar and click
+     **Connect WHOOP**. On iOS: tap **Connect WHOOP** on the sign-in screen.
 
-Optional: the ⋯ menu in the panel has a **Launch at Login** toggle.
+Optional (macOS only): the ⋯ menu in the panel has a **Launch at Login** toggle.
 
 ### Demo mode (no WHOOP account needed)
 
@@ -71,21 +79,23 @@ connecting, or for development without burning API calls.
 
 | File | Role |
 |------|------|
-| `HRVCVApp.swift` | `MenuBarExtra` entry point + menu bar label (`CV n%`) |
-| `ContentView.swift` | Dashboard UI: gauge, zone legend, evidence chart, verdict card, stats, table |
-| `HRVCalculator.swift` | Parses recoveries → 7-night mean/SD/CV, tiers, verdict, week-over-week baseline |
-| `WHOOPService.swift` | OAuth (PKCE via `ASWebAuthenticationSession`), Keychain tokens, WHOOP v2 API |
-| `MockData.swift` | Demo dataset (`HRVCV_MOCK=1`) + headless snapshot hook (dev) |
-| `Secrets.swift` | Your WHOOP client ID + secret (git-ignored; see `Secrets.swift.example`) |
+| `HRV-CV Monitor/HRVCVApp.swift` | App entry point: `MenuBarExtra` + menu bar label (`CV n%`) on macOS, a plain `WindowGroup` on iOS |
+| `HRV-CV Monitor/ContentView.swift` | Dashboard UI: gauge, zone legend, evidence chart, verdict card, stats, table (shared, with `#if os(macOS)`/`#if os(iOS)` for platform-only bits) |
+| `HRV-CV Monitor/Snapshot.swift` | Headless snapshot hook (dev, macOS-only): `HRVCV_SNAPSHOT=/path.png` renders the popover to a PNG |
+| `HRVCVCore/` | Local Swift package shared by macOS + iOS: `HRVCalculator` (7-night mean/SD/CV, tiers, verdict), `WHOOPService`/`TokenStore` (OAuth + Keychain + WHOOP v2 API), `MockData` (demo dataset), tier colors |
+| `HRVCVCore/Sources/HRVCVCore/Secrets.swift` | Your WHOOP client ID + secret (git-ignored; see `Secrets.swift.example` in the same folder) |
 | `broker/` | Optional serverless token broker for sharing (see below) |
 
 - **Auth:** Authorization Code + PKCE, presented in an in-app `ASWebAuthenticationSession`
   sheet. Tokens live in the Keychain (one item), auto-refreshed before expiry.
+  `WHOOPService.presentationAnchorProvider` is wired up per-platform (mac key
+  window vs. iOS window scene) so the shared package never imports AppKit/UIKit.
 - **Data:** WHOOP API **v2** `GET /recovery` (max `limit` 25), deduped to one
-  record per calendar day. Refreshes hourly, on wake from sleep, and when the
-  panel opens with data older than 15 minutes.
-- **Menu-bar only:** `LSUIElement` is set, so there's no Dock icon; quit from the
-  panel (⋯ menu or ⌘Q).
+  record per calendar day. Refreshes hourly, on wake from sleep (macOS), and
+  when the panel opens with data older than 15 minutes.
+- **Menu-bar only on macOS:** `LSUIElement` is scoped to the macOS SDK, so
+  there's no Dock icon there; quit from the panel (⋯ menu or ⌘Q). The iOS
+  build is a normal foreground app (no such menu-bar concept).
 
 ### Developer notes
 

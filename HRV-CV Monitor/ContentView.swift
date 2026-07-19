@@ -1,7 +1,12 @@
 import SwiftUI
 import Combine
+import HRVCVCore
+#if os(macOS)
 import AppKit
 import ServiceManagement
+#else
+import UIKit
+#endif
 
 // MARK: - View Model
 @MainActor
@@ -16,6 +21,16 @@ final class HRVViewModel: ObservableObject {
     private var timer   : Timer?
 
     init() {
+        #if os(macOS)
+        service.presentationAnchorProvider = { NSApp.keyWindow ?? NSApp.windows.first ?? NSWindow() }
+        #else
+        service.presentationAnchorProvider = {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+            return scene?.windows.first(where: \.isKeyWindow) ?? scene?.windows.first ?? UIWindow()
+        }
+        #endif
+
         if MockData.isEnabled {
             result      = HRVCalculator.calculate(from: MockData.records())
             isAuthed    = true
@@ -27,12 +42,14 @@ final class HRVViewModel: ObservableObject {
         if isAuthed { Task { await load() } }
         scheduleRefresh()
 
+        #if os(macOS)
         // Refresh after the Mac wakes — the hourly timer doesn't fire during sleep.
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { await self?.loadIfStale() }
         }
+        #endif
     }
 
     func signIn() async {
@@ -86,28 +103,6 @@ final class HRVViewModel: ObservableObject {
         }
     }
 }
-
-// MARK: - Tier Palette
-// One hue per tier, used consistently across gauge, stats, and bars.
-// Muted status colors (not alarms), adaptive to light/dark: a touch brighter
-// and more saturated in dark mode so they read on a dark background.
-private func adaptiveTier(light: (Double, Double, Double),
-                          dark:  (Double, Double, Double)) -> Color {
-    Color(nsColor: NSColor(name: nil) { appearance in
-        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        let c = isDark ? dark : light
-        return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
-    })
-}
-
-let tierGreen = adaptiveTier(light: (0.30, 0.72, 0.48), dark: (0.40, 0.82, 0.56))
-let tierAmber = adaptiveTier(light: (0.90, 0.66, 0.24), dark: (0.96, 0.75, 0.38))
-let tierRed   = adaptiveTier(light: (0.84, 0.46, 0.40), dark: (0.94, 0.57, 0.52))  // muted coral
-
-// Opaque popover background, so the panel reads as a rich solid surface instead
-// of a washed-out translucent material. Also used to "punch" the gauge knob and
-// tick gaps so they match the panel exactly.
-let popoverBackground = adaptiveTier(light: (0.96, 0.96, 0.97), dark: (0.12, 0.12, 0.13))
 
 // MARK: - Arc Gauge
 // A neutral ruler with a verdict-colored reading. The track is deliberately NOT
@@ -385,7 +380,11 @@ struct ContentView: View {
                 ErrorView()
             }
         }
+        #if os(macOS)
         .frame(width: 310)
+        #else
+        .frame(maxWidth: 310)
+        #endif
         .padding(16)
         .background(popoverBackground)
         .onAppear { Task { await vm.loadIfStale() } }
@@ -419,12 +418,14 @@ struct SignInView: View {
             if let err = vm.error {
                 Text(err).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
             }
+            #if os(macOS)
             Divider().padding(.top, 4)
             Button("Quit") { NSApp.terminate(nil) }
                 .buttonStyle(.plain)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .keyboardShortcut("q")
+            #endif
         }
         .padding(4)
     }
@@ -460,6 +461,7 @@ struct DashboardView: View {
     @EnvironmentObject var vm: HRVViewModel
     @State private var trendHover: Int?
     @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
+    @Environment(\.openURL) private var openURL
     // HRVCV_A11Y=1 forces the no-color rendering (the env key is read-only, so
     // snapshots can't inject it; this dev flag previews what the setting shows).
     private var differentiateWithoutColor: Bool {
@@ -772,7 +774,7 @@ struct DashboardView: View {
 
     private func openLearnMore() {
         if let url = URL(string: "https://www.whoop.com/us/en/thelocker/hrv-cv-recovery-metric/") {
-            NSWorkspace.shared.open(url)
+            openURL(url)
         }
     }
 
@@ -922,6 +924,7 @@ struct DashboardView: View {
             .accessibilityLabel("Refresh")
 
             Menu {
+                #if os(macOS)
                 Toggle("Launch at Login", isOn: Binding(
                     get: { SMAppService.mainApp.status == .enabled },
                     set: { on in
@@ -929,16 +932,21 @@ struct DashboardView: View {
                                 : SMAppService.mainApp.unregister()
                     }))
                 Divider()
+                #endif
                 Button("Sign out", action: vm.signOut)
+                #if os(macOS)
                 Divider()
                 Button("Quit HRV-CV Monitor") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
+                #endif
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
+            #if os(macOS)
             .menuStyle(.borderlessButton)
+            #endif
             .menuIndicator(.hidden)
             .frame(width: 20)
             .accessibilityLabel("More options")
