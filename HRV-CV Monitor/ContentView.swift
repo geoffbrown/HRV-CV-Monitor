@@ -604,10 +604,23 @@ struct DashboardView: View {
         let accent = verdictColor(result.verdict)
         return HStack(alignment: .top, spacing: 10) {
             RoundedRectangle(cornerRadius: 1.5).fill(accent).frame(width: 3)
+            // The (i) sits only in the headline row, not its own full-height
+            // column, so the detail sentence and SIGNALS run the full width.
             VStack(alignment: .leading, spacing: 3) {
-                Text(result.statusHeadline)
-                    .scaledFont(size: 12, weight: .semibold)
-                    .foregroundStyle(accent)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(result.statusHeadline)
+                        .scaledFont(size: 12, weight: .semibold)
+                        .foregroundStyle(accent)
+                    Spacer(minLength: 6)
+                    Button(action: openLearnMore) {
+                        Image(systemName: "info.circle")
+                            .scaledFont(size: 12)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("What is HRV-CV?")
+                    .accessibilityLabel("Learn more about HRV-CV")
+                }
                 Text(result.statusDetail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -615,15 +628,6 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 signalsList
             }
-            Spacer(minLength: 6)
-            Button(action: openLearnMore) {
-                Image(systemName: "info.circle")
-                    .scaledFont(size: 12)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
-            .help("What is HRV-CV?")
-            .accessibilityLabel("Learn more about HRV-CV")
         }
         .padding(10)
         .background(
