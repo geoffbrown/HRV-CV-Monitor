@@ -1,190 +1,28 @@
 import Foundation
 import Combine
-import AppKit
 import AuthenticationServices
 import CryptoKit
 import Security
 
-// MARK: - Configuration
-// Your WHOOP Developer App credentials live in the git-ignored Secrets.swift
-// (see Secrets.swift.example). Register at: https://developer.whoop.com with
-// redirect URI: hrvcv://callback
-enum WHOOPConfig {
-    static let clientId     = Secrets.whoopClientId
-    static let clientSecret = Secrets.whoopClientSecret
-    static let redirectURI  = "hrvcv://callback"
-    static let authBaseURL  = "https://api.prod.whoop.com/oauth/oauth2/auth"
-    static let tokenURL     = "https://api.prod.whoop.com/oauth/oauth2/token"
-    static let apiBase      = "https://api.prod.whoop.com/developer/v2"
-    static let scopes       = "offline read:recovery"
-
-    // Optional token broker. When non-empty (e.g. "https://your-app.vercel.app/api"),
-    // the app posts the auth code / refresh token to your backend, which holds the
-    // client secret and talks to WHOOP: so shared builds don't embed the secret.
-    // Empty = talk to WHOOP directly using the embedded clientSecret (local/dev).
-    static let brokerBaseURL = ""
-}
-
-// MARK: - Keychain
-enum Keychain {
-    private static func query(for key: String) -> [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword,
-         kSecAttrAccount as String: key,
-         kSecAttrService as String: "com.hrvcv.whoop"]
-    }
-
-    static func save(_ value: String, for key: String) {
-        guard let data = value.data(using: .utf8) else { return }
-        var q = query(for: key)
-        SecItemDelete(q as CFDictionary)
-        q[kSecValueData as String] = data
-        q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
-        SecItemAdd(q as CFDictionary, nil)
-    }
-
-    static func load(_ key: String) -> String? {
-        var q = query(for: key)
-        q[kSecReturnData as String] = true
-        q[kSecMatchLimit as String] = kSecMatchLimitOne
-        var result: AnyObject?
-        guard SecItemCopyMatching(q as CFDictionary, &result) == errSecSuccess,
-              let data = result as? Data else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    static func delete(_ key: String) {
-        SecItemDelete(query(for: key) as CFDictionary)
-    }
-}
-
-// MARK: - Token Storage
-// All tokens live in ONE keychain item, so the OS prompts at most once
-// (rather than once per field) to read them.
-final class TokenStore {
-    static let shared = TokenStore()
-
-    private let key = "whoop_tokens"
-
-    private struct Tokens: Codable {
-        var accessToken: String
-        var refreshToken: String?
-        var expiry: Double        // timeIntervalSince1970
-    }
-
-    private var cache: Tokens?
-    private var loaded = false
-
-    private func current() -> Tokens? {
-        if !loaded {
-            loaded = true
-            if let json = Keychain.load(key), let data = json.data(using: .utf8) {
-                cache = try? JSONDecoder().decode(Tokens.self, from: data)
-            }
-        }
-        return cache
-    }
-
-    var accessToken: String?  { current()?.accessToken }
-    var refreshToken: String? { current()?.refreshToken }
-    var expiry: Date?         { current().map { Date(timeIntervalSince1970: $0.expiry) } }
-
-    var isValid: Bool {
-        guard let t = current() else { return false }
-        return Date() < Date(timeIntervalSince1970: t.expiry).addingTimeInterval(-300)
-    }
-
-    func save(accessToken: String, refreshToken: String?, expiry: Date) {
-        let tokens = Tokens(accessToken: accessToken,
-                            refreshToken: refreshToken ?? cache?.refreshToken,
-                            expiry: expiry.timeIntervalSince1970)
-        cache = tokens
-        loaded = true
-        if let data = try? JSONEncoder().encode(tokens),
-           let json = String(data: data, encoding: .utf8) {
-            Keychain.save(json, for: key)
-        }
-    }
-
-    func clear() {
-        cache = nil
-        loaded = true
-        Keychain.delete(key)
-    }
-}
-
-// MARK: - WHOOP API Models
-struct RecoveryCollection: Decodable {
-    let records: [Recovery]
-}
-
-struct Recovery: Decodable, Identifiable {
-    let cycleId: Int
-    let createdAt: String
-    let scoreState: String
-    let score: RecoveryScore?
-
-    var id: Int { cycleId }
-
-    struct RecoveryScore: Decodable {
-        let recoveryScore: Int?
-        let hrvRmssdMilli: Double?
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case cycleId = "cycle_id"
-        case createdAt = "created_at"
-        case scoreState = "score_state"
-        case score
-    }
-}
-
-extension Recovery.RecoveryScore {
-    enum CodingKeys: String, CodingKey {
-        case recoveryScore = "recovery_score"
-        case hrvRmssdMilli = "hrv_rmssd_milli"
-    }
-}
-
-struct TokenResponse: Decodable {
-    let accessToken: String
-    let refreshToken: String?
-    let expiresIn: Int
-
-    enum CodingKeys: String, CodingKey {
-        case accessToken = "access_token"
-        case refreshToken = "refresh_token"
-        case expiresIn = "expires_in"
-    }
-}
-
-// MARK: - Auth Errors
-enum WHOOPError: LocalizedError {
-    case noToken, unauthorized, invalidCallback, tokenRejected(String), network(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .noToken:              return "Not signed in."
-        case .unauthorized:         return "Session expired. Please sign in again."
-        case .invalidCallback:      return "OAuth callback was invalid."
-        case .tokenRejected(let m): return m
-        case .network(let msg):     return msg
-        }
-    }
-}
-
 // MARK: - WHOOP Service
 @MainActor
-final class WHOOPService: NSObject, ObservableObject {
-    static let shared = WHOOPService()
+public final class WHOOPService: NSObject, ObservableObject {
+    public static let shared = WHOOPService()
 
     private let store = TokenStore.shared
     private var authSession: ASWebAuthenticationSession?
 
-    var isAuthenticated: Bool { store.accessToken != nil }
+    /// Supplies the window the WHOOP sign-in sheet is presented over. Each
+    /// platform target wires this once at startup (macOS: the key window;
+    /// iOS: the connected scene's key window) — kept out of this package so
+    /// it doesn't need to import AppKit or UIKit.
+    public var presentationAnchorProvider: (() -> ASPresentationAnchor)?
+
+    public var isAuthenticated: Bool { store.accessToken != nil }
 
     // MARK: OAuth
 
-    func startAuth() async throws {
+    public func startAuth() async throws {
         let verifier  = pkceVerifier()
         let challenge = pkceChallenge(from: verifier)
         let state     = UUID().uuidString
@@ -268,7 +106,7 @@ final class WHOOPService: NSObject, ObservableObject {
         storeToken(token)
     }
 
-    func refreshIfNeeded() async throws {
+    public func refreshIfNeeded() async throws {
         guard !store.isValid else { return }
         guard let refresh = store.refreshToken else { throw WHOOPError.noToken }
 
@@ -354,11 +192,25 @@ final class WHOOPService: NSObject, ObservableObject {
 
     // MARK: API
 
-    func fetchRecovery(limit: Int = 10) async throws -> [Recovery] {
+    public func fetchRecovery(limit: Int = 10) async throws -> [Recovery] {
+        try await get(path: "recovery", limit: limit, decoding: RecoveryCollection.self,
+                      errorMessage: "Couldn't read WHOOP's recovery data.").records
+    }
+
+    /// Requires the `read:sleep` scope. Tokens issued before that scope was
+    /// added won't carry it — a stale unauthorized/forbidden response here
+    /// means the user needs to sign out and reconnect WHOOP to re-consent.
+    public func fetchSleep(limit: Int = 10) async throws -> [Sleep] {
+        try await get(path: "activity/sleep", limit: limit, decoding: SleepCollection.self,
+                      errorMessage: "Couldn't read WHOOP's sleep data.").records
+    }
+
+    private func get<T: Decodable>(path: String, limit: Int, decoding: T.Type,
+                                    errorMessage: String) async throws -> T {
         try await refreshIfNeeded()
         guard let token = store.accessToken else { throw WHOOPError.noToken }
 
-        var comps = URLComponents(string: "\(WHOOPConfig.apiBase)/recovery")!
+        var comps = URLComponents(string: "\(WHOOPConfig.apiBase)/\(path)")!
         comps.queryItems = [.init(name: "limit", value: "\(min(max(limit, 1), 25))")]  // WHOOP caps limit at 25
 
         var req = URLRequest(url: comps.url!)
@@ -376,13 +228,13 @@ final class WHOOPService: NSObject, ObservableObject {
         }
 
         do {
-            return try JSONDecoder().decode(RecoveryCollection.self, from: data).records
+            return try JSONDecoder().decode(T.self, from: data)
         } catch {
-            throw WHOOPError.network("Couldn't read WHOOP's recovery data.")
+            throw WHOOPError.network(errorMessage)
         }
     }
 
-    func signOut() { store.clear() }
+    public func signOut() { store.clear() }
 
     // MARK: PKCE
 
@@ -400,9 +252,14 @@ final class WHOOPService: NSObject, ObservableObject {
 
 // MARK: - Web Auth Presentation
 extension WHOOPService: ASWebAuthenticationPresentationContextProviding {
-    nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+    public nonisolated func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
         MainActor.assumeIsolated {
-            NSApp.keyWindow ?? NSApp.windows.first ?? NSWindow()
+            guard let anchor = presentationAnchorProvider?() else {
+                preconditionFailure(
+                    "WHOOPService.presentationAnchorProvider must be set before starting auth."
+                )
+            }
+            return anchor
         }
     }
 }

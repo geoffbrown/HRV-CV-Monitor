@@ -1,7 +1,12 @@
 import SwiftUI
 import Combine
+import HRVCVCore
+#if os(macOS)
 import AppKit
 import ServiceManagement
+#else
+import UIKit
+#endif
 
 // MARK: - View Model
 @MainActor
@@ -16,8 +21,18 @@ final class HRVViewModel: ObservableObject {
     private var timer   : Timer?
 
     init() {
+        #if os(macOS)
+        service.presentationAnchorProvider = { NSApp.keyWindow ?? NSApp.windows.first ?? NSWindow() }
+        #else
+        service.presentationAnchorProvider = {
+            let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+            let scene = scenes.first { $0.activationState == .foregroundActive } ?? scenes.first
+            return scene?.windows.first(where: \.isKeyWindow) ?? scene?.windows.first ?? UIWindow()
+        }
+        #endif
+
         if MockData.isEnabled {
-            result      = HRVCalculator.calculate(from: MockData.records())
+            result      = HRVCalculator.calculate(from: MockData.records(), sleep: MockData.sleepRecords())
             isAuthed    = true
             lastUpdated = Date()
             return
@@ -27,12 +42,14 @@ final class HRVViewModel: ObservableObject {
         if isAuthed { Task { await load() } }
         scheduleRefresh()
 
+        #if os(macOS)
         // Refresh after the Mac wakes — the hourly timer doesn't fire during sleep.
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             Task { await self?.loadIfStale() }
         }
+        #endif
     }
 
     func signIn() async {
@@ -56,7 +73,11 @@ final class HRVViewModel: ObservableObject {
         error = nil
         do {
             let records = try await service.fetchRecovery(limit: 25)
-            result      = HRVCalculator.calculate(from: records)
+            // Sleep is a secondary signal, not required data: a scope that
+            // isn't granted yet (pre-existing sign-in) or a transient failure
+            // just means the sleep consistency row stays hidden, not an error.
+            let sleep = (try? await service.fetchSleep(limit: 25)) ?? []
+            result      = HRVCalculator.calculate(from: records, sleep: sleep)
             lastUpdated = Date()
             if result == nil { error = "Need 7+ nights of WHOOP data." }
         } catch {
@@ -86,28 +107,6 @@ final class HRVViewModel: ObservableObject {
         }
     }
 }
-
-// MARK: - Tier Palette
-// One hue per tier, used consistently across gauge, stats, and bars.
-// Muted status colors (not alarms), adaptive to light/dark: a touch brighter
-// and more saturated in dark mode so they read on a dark background.
-private func adaptiveTier(light: (Double, Double, Double),
-                          dark:  (Double, Double, Double)) -> Color {
-    Color(nsColor: NSColor(name: nil) { appearance in
-        let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        let c = isDark ? dark : light
-        return NSColor(srgbRed: c.0, green: c.1, blue: c.2, alpha: 1)
-    })
-}
-
-let tierGreen = adaptiveTier(light: (0.30, 0.72, 0.48), dark: (0.40, 0.82, 0.56))
-let tierAmber = adaptiveTier(light: (0.90, 0.66, 0.24), dark: (0.96, 0.75, 0.38))
-let tierRed   = adaptiveTier(light: (0.84, 0.46, 0.40), dark: (0.94, 0.57, 0.52))  // muted coral
-
-// Opaque popover background, so the panel reads as a rich solid surface instead
-// of a washed-out translucent material. Also used to "punch" the gauge knob and
-// tick gaps so they match the panel exactly.
-let popoverBackground = adaptiveTier(light: (0.96, 0.96, 0.97), dark: (0.12, 0.12, 0.13))
 
 // MARK: - Arc Gauge
 // A neutral ruler with a verdict-colored reading. The track is deliberately NOT
@@ -385,7 +384,11 @@ struct ContentView: View {
                 ErrorView()
             }
         }
+        #if os(macOS)
         .frame(width: 310)
+        #else
+        .frame(maxWidth: 310)
+        #endif
         .padding(16)
         .background(popoverBackground)
         .onAppear { Task { await vm.loadIfStale() } }
@@ -419,12 +422,14 @@ struct SignInView: View {
             if let err = vm.error {
                 Text(err).font(.caption).foregroundStyle(.red).multilineTextAlignment(.center)
             }
+            #if os(macOS)
             Divider().padding(.top, 4)
             Button("Quit") { NSApp.terminate(nil) }
                 .buttonStyle(.plain)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .keyboardShortcut("q")
+            #endif
         }
         .padding(4)
     }
@@ -460,6 +465,7 @@ struct DashboardView: View {
     @EnvironmentObject var vm: HRVViewModel
     @State private var trendHover: Int?
     @Environment(\.accessibilityDifferentiateWithoutColor) private var systemDifferentiateWithoutColor
+    @Environment(\.openURL) private var openURL
     // HRVCV_A11Y=1 forces the no-color rendering (the env key is read-only, so
     // snapshots can't inject it; this dev flag previews what the setting shows).
     private var differentiateWithoutColor: Bool {
@@ -626,15 +632,22 @@ struct DashboardView: View {
     var signalsList: some View {
         if result.baselineDeltaMs != nil {
             Divider().opacity(0.35).padding(.top, 3)
-            Text("SIGNALS")
-                .font(.system(size: 7.5, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 3)
+            HStack(spacing: 4) {
+                Text("SIGNALS")
+                    .font(.system(size: 7.5, weight: .semibold))
+                    .tracking(0.6)
+                Text("· VS. PRIOR 7 NIGHTS")
+                    .font(.system(size: 7.5, weight: .medium))
+                    .tracking(0.6)
+                    .opacity(0.7)
+            }
+            .foregroundStyle(.tertiary)
+            .padding(.top, 3)
             VStack(spacing: 3) {
                 baselineSignalRow
                 swingSignalRow
                 recoverySignalRow
+                sleepConsistencySignalRow
             }
             .padding(.top, 2)
         }
@@ -685,7 +698,7 @@ struct DashboardView: View {
         else             { judgment = .neutral; word = "Steady";  sym = "arrow.right" }
         return signalRow(judgment: judgment, symbol: sym, label: "HRV baseline", value: word)
             .help(result.previousMean.map {
-                String(format: "Average nightly HRV: %.1f ms this week, %.1f ms last week.",
+                String(format: "Average nightly HRV: %.1f ms over the last 7 nights, %.1f ms the 7 nights before that.",
                        result.mean, $0)
             } ?? "")
     }
@@ -698,7 +711,7 @@ struct DashboardView: View {
     var swingSignalRow: some View {
         let delta = result.trendDelta ?? 0
         let widening = delta > 0.5, settling = delta < -0.5
-        let word = widening ? "Widening" : settling ? "Settling" : "Steady"
+        let word = widening ? "Widened" : settling ? "Settled" : "Steady"
         let sym  = widening ? "arrow.up" : settling ? "arrow.down" : "arrow.right"
         let judgment: SignalJudgment
         if settling                      { judgment = .good }
@@ -713,7 +726,7 @@ struct DashboardView: View {
         }
         return signalRow(judgment: judgment, symbol: sym, label: "Night-to-night swing", value: word)
             .help(result.previousCV.map {
-                String(format: "HRV-CV: %.1f%% this week, %.1f%% last week.", result.cv, $0)
+                String(format: "HRV-CV: %.1f%% over the last 7 nights, %.1f%% the 7 nights before that.", result.cv, $0)
             } ?? "")
     }
 
@@ -725,6 +738,26 @@ struct DashboardView: View {
         let word = r >= 67 ? "Strong" : r >= 34 ? "Moderate" : "Low"
         return signalRow(judgment: judgment, label: "Recovery", value: word)
             .help("Average WHOOP recovery across the 7 nights: \(r)%.")
+    }
+
+    // Context, not an input to the verdict: has sleep timing itself gotten
+    // more or less regular? A plausible "why" behind a widening HRV swing.
+    // Hidden entirely until read:sleep is granted (existing sign-ins won't
+    // have it until they reconnect) and sleep data lands in this window.
+    @ViewBuilder
+    var sleepConsistencySignalRow: some View {
+        if let consistency = result.avgSleepConsistency {
+            let judgment: SignalJudgment, word: String, sym: String
+            switch result.sleepConsistencyDirection {
+            case .some(1):  judgment = .good;    word = "Rising";  sym = "arrow.up"
+            case .some(-1): judgment = .watch;   word = "Falling"; sym = "arrow.down"
+            default:        judgment = .neutral; word = "Steady";  sym = "arrow.right"
+            }
+            signalRow(judgment: judgment, symbol: sym, label: "Sleep consistency", value: word)
+                .help(result.previousSleepConsistency.map {
+                    "WHOOP sleep consistency: \(consistency)% over the last 7 nights, \($0)% the 7 nights before that."
+                } ?? "WHOOP sleep consistency: \(consistency)% over the last 7 nights.")
+        }
     }
 
     // One row of the reasoning: a glyph + a factual word. Two clean channels:
@@ -772,7 +805,7 @@ struct DashboardView: View {
 
     private func openLearnMore() {
         if let url = URL(string: "https://www.whoop.com/us/en/thelocker/hrv-cv-recovery-metric/") {
-            NSWorkspace.shared.open(url)
+            openURL(url)
         }
     }
 
@@ -922,6 +955,7 @@ struct DashboardView: View {
             .accessibilityLabel("Refresh")
 
             Menu {
+                #if os(macOS)
                 Toggle("Launch at Login", isOn: Binding(
                     get: { SMAppService.mainApp.status == .enabled },
                     set: { on in
@@ -929,16 +963,21 @@ struct DashboardView: View {
                                 : SMAppService.mainApp.unregister()
                     }))
                 Divider()
+                #endif
                 Button("Sign out", action: vm.signOut)
+                #if os(macOS)
                 Divider()
                 Button("Quit HRV-CV Monitor") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
+                #endif
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
+            #if os(macOS)
             .menuStyle(.borderlessButton)
+            #endif
             .menuIndicator(.hidden)
             .frame(width: 20)
             .accessibilityLabel("More options")

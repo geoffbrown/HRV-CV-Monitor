@@ -1,14 +1,18 @@
 import SwiftUI
+import HRVCVCore
 
 @main
 struct HRVCVApp: App {
     @StateObject private var vm = HRVViewModel()
 
     init() {
+        #if os(macOS)
         Snapshot.runIfRequested()   // dev hook, no-op unless HRVCV_SNAPSHOT is set
+        #endif
     }
 
     var body: some Scene {
+        #if os(macOS)
         MenuBarExtra {
             ContentView()
                 .environmentObject(vm)
@@ -16,8 +20,15 @@ struct HRVCVApp: App {
             menuLabel
         }
         .menuBarExtraStyle(.window)
+        #else
+        WindowGroup {
+            ContentView()
+                .environmentObject(vm)
+        }
+        #endif
     }
 
+    #if os(macOS)
     /// The text/icon shown in the menu bar itself.
     @ViewBuilder
     var menuLabel: some View {
@@ -27,8 +38,10 @@ struct HRVCVApp: App {
             Image(systemName: "heart.text.square")
         }
     }
+    #endif
 }
 
+#if os(macOS)
 // MARK: - Menu Bar Label
 // "CV" plus the value in a pill, rendered as ONE template image. No trend
 // arrow — "up" for CV is ambiguous (that's the whole point of the app), so it
@@ -69,3 +82,4 @@ struct MenuBarLabel: View {
         return image
     }
 }
+#endif
