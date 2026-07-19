@@ -38,14 +38,18 @@ sees real OAuth errors.
 
 ## Point the app at the broker
 
-In `HRV-CV Monitor/WHOOPService.swift`, set:
+In `HRVCVCore/Sources/HRVCVCore/WHOOPConfig.swift`, set:
 
 ```swift
 static let brokerBaseURL = "https://hrvcv-auth-broker.vercel.app/api"
 ```
 
-With that set, the app stops using the embedded `clientSecret` entirely — you can
-delete `Secrets.swift` from shared builds. Leave `brokerBaseURL` empty for local
+With that set the app never calls WHOOP's token endpoint directly, so the
+embedded `clientSecret` is unused. **For a distributed build, also blank out the
+secret in `Secrets.swift`** (`whoopClientSecret = ""`) — otherwise the real
+secret string is still compiled into the .app binary and can be extracted, which
+defeats the whole point of the broker. Keep `whoopClientId` (it's public and
+still used to build the auth URL). Leave `brokerBaseURL` empty for local
 development against the embedded secret.
 
 ## Local testing
