@@ -394,7 +394,8 @@ struct DashboardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            heroBlock
+            CVGauge(cv: result.cv)
+            trendCard
             zoneLegend
             statusCard
             Divider().opacity(0.5)
@@ -408,35 +409,44 @@ struct DashboardView: View {
     // MARK: Hero — the gauge and its HRV-CV trajectory as one unit (no card box).
     // The line flows straight out of the gauge; the row below doubles as a live
     // readout while scrubbing.
-    var heroBlock: some View {
-        VStack(spacing: 6) {
-            CVGauge(cv: result.cv)
-            if result.cvHistory.count >= 2 {
-                let pts = result.cvHistory
-                VStack(spacing: 5) {
-                    Sparkline(points: pts,
-                              lineColor: verdictColor(result.verdict),
-                              tierColor: { tierColor(forCV: $0) },
-                              thresholds: [8, 15],
-                              hoverIndex: $trendHover)
-                        .frame(height: 38)
-                    HStack {
-                        Text(pts.first?.label ?? "")
+    // MARK: Trend card — contained to match the status card, with real presence
+    // (taller chart, padding). Header doubles as a live readout while scrubbing.
+    @ViewBuilder
+    var trendCard: some View {
+        if result.cvHistory.count >= 2 {
+            let pts = result.cvHistory
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    if let i = trendHover, pts.indices.contains(i) {
+                        trendReadout(pts[i])
+                    } else {
+                        Text("HRV-CV TREND")
+                            .font(.system(size: 8, weight: .semibold))
+                            .tracking(0.6)
+                            .foregroundStyle(.tertiary)
                         Spacer()
-                        Text(pts.last?.label ?? "")
+                        trendSummary
                     }
-                    .font(.system(size: 8))
-                    .foregroundStyle(.tertiary)
-                    Group {
-                        if let i = trendHover, pts.indices.contains(i) {
-                            trendReadout(pts[i])
-                        } else {
-                            trendSummary
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
                 }
+                Sparkline(points: pts,
+                          lineColor: verdictColor(result.verdict),
+                          tierColor: { tierColor(forCV: $0) },
+                          thresholds: [8, 15],
+                          hoverIndex: $trendHover)
+                    .frame(height: 50)
+                HStack {
+                    Text(pts.first?.label ?? "")
+                    Spacer()
+                    Text(pts.last?.label ?? "")
+                }
+                .font(.system(size: 8))
+                .foregroundStyle(.tertiary)
             }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+            )
         }
     }
 
