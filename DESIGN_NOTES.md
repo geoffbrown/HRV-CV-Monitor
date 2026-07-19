@@ -336,6 +336,32 @@ platforms, since they share the redirect URI scheme.
 `"INFOPLIST_KEY_LSUIElement[sdk=macosx*]"` in the build settings, not the
 static `Info.plist` — the iOS build is an ordinary foreground app.
 
+### Typography — scalable, not semantic (`Typography.swift`)
+
+Content text uses a custom **`.scaledFont(size:weight:design:)`** modifier
+(in `HRVCVCore`, backed by `@ScaledMetric`) rather than fixed
+`.font(.system(size:))`. It keeps the exact tuned sizes at the default
+setting but grows them with the user's Dynamic Type setting. We deliberately
+did **not** switch to semantic text styles (`.caption`/`.footnote`/…): those
+would snap the fine-grained 8/9/9.5/10/11/12/13 scale onto iOS's coarser
+fixed rungs and flatten the hierarchy. This is an **iOS-facing** change —
+macOS has no Dynamic Type control, so `.scaledFont` is inert there (size
+stays as given), which is fine.
+
+Two things stay **fixed on purpose**: the **gauge** (`CVGauge`) internals and
+the **menu bar label**. The gauge is a positioned graphical instrument (its
+center number and dial numerals are laid out by geometry, like Apple's
+Activity rings, whose center text doesn't Dynamic-Type-scale either); scaling
+them would break the bowl composition. The menu bar label is macOS-only and
+image-rendered. If the gauge should ever scale, that's a real layout job
+(responsive bowl geometry), not a font swap.
+
+Scaling is **clamped** to the standard range via
+`.dynamicTypeSize(.xSmall ... .xxxLarge)` on the root, because the panel is
+dense with fixed frames (table column widths, gauge/chart heights) that the
+full accessibility sizes (2-3x) would clip. Lifting that clamp is a
+follow-up that needs the fixed frames made flexible first.
+
 **Not yet verified in Xcode** (this was built headless, no Xcode GUI
 available): open the project, let it resolve the new local package, confirm
 the iOS destination actually builds and runs in Simulator, and do a real

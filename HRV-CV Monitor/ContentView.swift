@@ -295,7 +295,7 @@ struct HRVBandChart: View {
                     Path { p in p.move(to: CGPoint(x: 0, y: oy)); p.addLine(to: CGPoint(x: w, y: oy)) }
                         .stroke(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
                     Text("last week")
-                        .font(.system(size: 8, weight: .medium))
+                        .scaledFont(size: 8, weight: .medium)
                         .foregroundStyle(.tertiary)
                         .position(x: 28, y: oy - 6)
                 }
@@ -391,6 +391,11 @@ struct ContentView: View {
         #endif
         .padding(16)
         .background(popoverBackground)
+        // Text scales with the user's Dynamic Type setting (iOS), but the panel
+        // is dense with fixed frames, so clamp to the standard range: the full
+        // accessibility sizes (2-3x) would need a layout reflow this doesn't
+        // have yet. Meaningful growth without clipping.
+        .dynamicTypeSize(.xSmall ... .xxxLarge)
         .onAppear { Task { await vm.loadIfStale() } }
     }
 }
@@ -402,7 +407,7 @@ struct SignInView: View {
     var body: some View {
         VStack(spacing: 14) {
             Image(systemName: "heart.text.square.fill")
-                .font(.system(size: 40))
+                .scaledFont(size: 40)
                 .foregroundStyle(.pink)
             Text("HRV-CV Monitor")
                 .font(.headline)
@@ -519,10 +524,10 @@ struct DashboardView: View {
                     } else {
                         HStack(spacing: 4) {
                             Text("HRV")
-                                .font(.system(size: 11, weight: .bold))
+                                .scaledFont(size: 11, weight: .bold)
                                 .foregroundStyle(.secondary)
                             Text("typical range")
-                                .font(.system(size: 9))
+                                .scaledFont(size: 9)
                                 .foregroundStyle(.tertiary)
                         }
                         Spacer()
@@ -542,7 +547,7 @@ struct DashboardView: View {
                     Spacer()
                     Text(s.last?.label ?? "")
                 }
-                .font(.system(size: 9))
+                .scaledFont(size: 9)
                 .foregroundStyle(.tertiary)
             }
         }
@@ -572,7 +577,7 @@ struct DashboardView: View {
                 Text("\(p.recovery)% recovery").foregroundStyle(.secondary)
             }
         }
-        .font(.system(size: 10, weight: .semibold, design: .rounded))
+        .scaledFont(size: 10, weight: .semibold, design: .rounded)
     }
 
     // WHOOP recovery zones: green ≥67, yellow 34–66, red <34.
@@ -586,10 +591,10 @@ struct DashboardView: View {
         if let d = result.baselineDeltaMs, abs(d) >= 1 {
             let up = d > 0
             HStack(spacing: 3) {
-                Image(systemName: up ? "arrow.up" : "arrow.down").font(.system(size: 8, weight: .bold))
+                Image(systemName: up ? "arrow.up" : "arrow.down").scaledFont(size: 8, weight: .bold)
                 Text(String(format: "Baseline %@ %.0f ms", up ? "up" : "down", abs(d)))
             }
-            .font(.system(size: 10, weight: .semibold))
+            .scaledFont(size: 10, weight: .semibold)
             .foregroundStyle(up ? tierGreen : tierRed)
         }
     }
@@ -601,7 +606,7 @@ struct DashboardView: View {
             RoundedRectangle(cornerRadius: 1.5).fill(accent).frame(width: 3)
             VStack(alignment: .leading, spacing: 3) {
                 Text(result.statusHeadline)
-                    .font(.system(size: 12, weight: .semibold))
+                    .scaledFont(size: 12, weight: .semibold)
                     .foregroundStyle(accent)
                 Text(result.statusDetail)
                     .font(.caption)
@@ -613,7 +618,7 @@ struct DashboardView: View {
             Spacer(minLength: 6)
             Button(action: openLearnMore) {
                 Image(systemName: "info.circle")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -637,10 +642,10 @@ struct DashboardView: View {
             Divider().opacity(0.35).padding(.top, 3)
             HStack(spacing: 4) {
                 Text("SIGNALS")
-                    .font(.system(size: 9, weight: .semibold))
+                    .scaledFont(size: 9, weight: .semibold)
                     .tracking(0.6)
                 Text("· VS. PRIOR 7 NIGHTS")
-                    .font(.system(size: 9, weight: .medium))
+                    .scaledFont(size: 9, weight: .medium)
                     .tracking(0.6)
                     .opacity(0.7)
             }
@@ -784,10 +789,10 @@ struct DashboardView: View {
             Group {
                 if differentiateWithoutColor {
                     Image(systemName: judgment.symbol)
-                        .font(.system(size: 8, weight: .bold))
+                        .scaledFont(size: 8, weight: .bold)
                 } else if let symbol {
                     Image(systemName: symbol)
-                        .font(.system(size: 8, weight: .bold))
+                        .scaledFont(size: 8, weight: .bold)
                 } else {
                     Circle().frame(width: 5, height: 5)
                 }
@@ -798,7 +803,7 @@ struct DashboardView: View {
             Spacer()
             Text(value).foregroundStyle(.secondary)
         }
-        .font(.system(size: 9.5, weight: .medium, design: .rounded))
+        .scaledFont(size: 9.5, weight: .medium, design: .rounded)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label): \(value). \(judgment.spoken)")
     }
@@ -837,10 +842,10 @@ struct DashboardView: View {
         let active = result.tier == tier
         return HStack(spacing: 4) {
             Text(name)
-                .font(.system(size: 9, weight: active ? .bold : .medium))
+                .scaledFont(size: 9, weight: active ? .bold : .medium)
                 .foregroundStyle(active ? Color.primary : Color.secondary)
             Text(range)
-                .font(.system(size: 9, design: .monospaced))
+                .scaledFont(size: 9, design: .monospaced)
                 .foregroundStyle(.tertiary)
         }
         .padding(.horizontal, 7)
@@ -873,17 +878,17 @@ struct DashboardView: View {
                   trend: Int? = nil, valueColor: Color? = nil) -> some View {
         VStack(spacing: 3) {
             HStack(spacing: 2) {
-                Text(value).font(.system(size: 13, weight: .semibold, design: .rounded))
+                Text(value).scaledFont(size: 13, weight: .semibold, design: .rounded)
                     .monospacedDigit()
                     .foregroundStyle(valueColor ?? .primary)
                 if let t = trend {
                     Image(systemName: t > 0 ? "arrow.up" : t < 0 ? "arrow.down" : "arrow.right")
-                        .font(.system(size: 8, weight: .bold))
+                        .scaledFont(size: 8, weight: .bold)
                         .foregroundStyle(t > 0 ? tierGreen : t < 0 ? tierRed : .secondary)
                 }
             }
             Text(label)
-                .font(.system(size: 9, weight: .semibold))
+                .scaledFont(size: 9, weight: .semibold)
                 .tracking(0.6)
                 .foregroundStyle(.tertiary)
         }
@@ -905,10 +910,19 @@ struct DashboardView: View {
                     .frame(width: 48, alignment: .leading)
                 Text("WHOOP RECOVERY")
                     .frame(maxWidth: .infinity, alignment: .leading)
+                // Mirror the data row's trailing columns (30 recovery% + 34 HRV
+                // + ms unit) so "HRV" sits directly over the numbers, not the
+                // "ms". The recovery-% column stays unlabeled; the ms slot is a
+                // hidden placeholder that just reserves the unit's width.
+                Spacer()
+                    .frame(width: 30)
                 Text("HRV")
-                    .frame(width: 56, alignment: .trailing)
+                    .frame(width: 34, alignment: .trailing)
+                Text("ms")
+                    .scaledFont(size: 10)
+                    .hidden()
             }
-            .font(.system(size: 9, weight: .semibold))
+            .scaledFont(size: 9, weight: .semibold)
             .tracking(0.5)
             .foregroundStyle(.tertiary)
 
@@ -920,14 +934,14 @@ struct DashboardView: View {
                         .frame(width: 48, alignment: .leading)
                     recoveryBar(day.recovery)
                     Text("\(day.recovery)%")
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .scaledFont(size: 10, weight: .medium, design: .monospaced)
                         .foregroundStyle(.secondary)
                         .frame(width: 30, alignment: .trailing)
                     Text(String(format: "%.1f", day.hrv))
-                        .font(.system(size: 11, design: .monospaced))
+                        .scaledFont(size: 11, design: .monospaced)
                         .frame(width: 34, alignment: .trailing)
                     Text("ms")
-                        .font(.system(size: 10))
+                        .scaledFont(size: 10)
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -958,7 +972,7 @@ struct DashboardView: View {
             Spacer()
             Button(action: { Task { await vm.load() } }) {
                 Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -983,7 +997,7 @@ struct DashboardView: View {
                 #endif
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                     .foregroundStyle(.secondary)
             }
             #if os(macOS)
