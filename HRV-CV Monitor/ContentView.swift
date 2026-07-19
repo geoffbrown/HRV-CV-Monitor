@@ -396,7 +396,6 @@ struct DashboardView: View {
     let result: HRVCVResult
     @EnvironmentObject var vm: HRVViewModel
     @State private var trendHover: Int?
-    @State private var showHistory = false
 
     var body: some View {
         // While scrubbing the chart you're time-travelling — dim today's verdict
@@ -421,34 +420,9 @@ struct DashboardView: View {
                 .opacity(scrubbing ? 0.4 : 1)
                 .animation(.easeInOut(duration: 0.15), value: scrubbing)
             statsRow
-            historyDisclosure
+            dayTable
             Divider().opacity(0.3)
             footerRow
-        }
-    }
-
-    // MARK: History disclosure — the 7-night table is the densest, least-glanced
-    // block, so it's details-on-demand: hidden by default, one quiet tap to open.
-    @ViewBuilder
-    var historyDisclosure: some View {
-        VStack(spacing: 10) {
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) { showHistory.toggle() }
-            } label: {
-                HStack(spacing: 4) {
-                    Text("7-day history")
-                        .font(.system(size: 10, weight: .medium))
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8, weight: .semibold))
-                        .rotationEffect(.degrees(showHistory ? 90 : 0))
-                    Spacer()
-                }
-                .foregroundStyle(.tertiary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if showHistory { dayTable }
         }
     }
 

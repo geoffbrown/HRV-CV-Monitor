@@ -34,16 +34,11 @@ struct MenuBarLabel: View {
     private var fill: CGFloat { CGFloat(min(max(result.cv / 30, 0), 1)) }
 
     var body: some View {
-        // Identity ("CV") + metric ("22%") — no direction arrow, because the bar
+        // Identity + metric in ONE Text — a status-bar label splits an HStack of
+        // Texts unreliably (the number can get dropped). No trend arrow: the bar
         // can't show the verdict (colour is stripped) and "up" for CV is ambiguous.
-        // Swap the "CV" Text for SpreadGlyph/MiniArc to try a glyph instead.
-        HStack(spacing: 3) {
-            Text("CV")
-                .font(.system(size: 9, weight: .semibold))
-                .opacity(0.7)
-            Text("\(Int(result.cv.rounded()))%")
-                .font(.system(size: 11, weight: .semibold, design: .rounded))
-        }
+        Text("CV \(Int(result.cv.rounded()))%")
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
     }
 }
 
