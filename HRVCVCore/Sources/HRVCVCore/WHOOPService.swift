@@ -193,10 +193,24 @@ public final class WHOOPService: NSObject, ObservableObject {
     // MARK: API
 
     public func fetchRecovery(limit: Int = 10) async throws -> [Recovery] {
+        try await get(path: "recovery", limit: limit, decoding: RecoveryCollection.self,
+                      errorMessage: "Couldn't read WHOOP's recovery data.").records
+    }
+
+    /// Requires the `read:sleep` scope. Tokens issued before that scope was
+    /// added won't carry it — a stale unauthorized/forbidden response here
+    /// means the user needs to sign out and reconnect WHOOP to re-consent.
+    public func fetchSleep(limit: Int = 10) async throws -> [Sleep] {
+        try await get(path: "activity/sleep", limit: limit, decoding: SleepCollection.self,
+                      errorMessage: "Couldn't read WHOOP's sleep data.").records
+    }
+
+    private func get<T: Decodable>(path: String, limit: Int, decoding: T.Type,
+                                    errorMessage: String) async throws -> T {
         try await refreshIfNeeded()
         guard let token = store.accessToken else { throw WHOOPError.noToken }
 
-        var comps = URLComponents(string: "\(WHOOPConfig.apiBase)/recovery")!
+        var comps = URLComponents(string: "\(WHOOPConfig.apiBase)/\(path)")!
         comps.queryItems = [.init(name: "limit", value: "\(min(max(limit, 1), 25))")]  // WHOOP caps limit at 25
 
         var req = URLRequest(url: comps.url!)
@@ -214,9 +228,9 @@ public final class WHOOPService: NSObject, ObservableObject {
         }
 
         do {
-            return try JSONDecoder().decode(RecoveryCollection.self, from: data).records
+            return try JSONDecoder().decode(T.self, from: data)
         } catch {
-            throw WHOOPError.network("Couldn't read WHOOP's recovery data.")
+            throw WHOOPError.network(errorMessage)
         }
     }
 

@@ -31,6 +31,38 @@ extension Recovery.RecoveryScore {
     }
 }
 
+struct SleepCollection: Decodable {
+    let records: [Sleep]
+}
+
+public struct Sleep: Decodable {
+    let createdAt: String
+    let nap: Bool
+    let scoreState: String
+    let score: SleepScore?
+
+    struct SleepScore: Decodable {
+        // WHOOP's own night-to-night sleep consistency score (0-100): how
+        // similar sleep/wake timing has been, distinct from duration or
+        // performance. This is what we average for the "Sleep consistency"
+        // signal, rather than deriving our own duration-variability metric.
+        let sleepConsistencyPercentage: Double?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case createdAt = "created_at"
+        case nap
+        case scoreState = "score_state"
+        case score
+    }
+}
+
+extension Sleep.SleepScore {
+    enum CodingKeys: String, CodingKey {
+        case sleepConsistencyPercentage = "sleep_consistency_percentage"
+    }
+}
+
 struct TokenResponse: Decodable {
     let accessToken: String
     let refreshToken: String?

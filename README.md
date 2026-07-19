@@ -43,8 +43,12 @@ local `HRVCVCore` Swift package.
 
 1. **Register a WHOOP developer app** at <https://developer.whoop.com>:
    - **Redirect URI:** `hrvcv://callback`
-   - **Scopes:** `read:recovery offline`
+   - **Scopes:** `read:recovery read:sleep offline`
    - Note the **Client ID** and reveal the **Client Secret**.
+   - Already had an app registered before `read:sleep` existed here? Update
+     its scopes in the WHOOP dashboard, then **sign out and reconnect WHOOP**
+     in the app — an existing sign-in's token won't retroactively pick up the
+     new scope, so the sleep consistency signal just stays hidden until you do.
 
 2. **Add your credentials** (kept out of git):
    ```sh

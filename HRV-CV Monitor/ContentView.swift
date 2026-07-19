@@ -32,7 +32,7 @@ final class HRVViewModel: ObservableObject {
         #endif
 
         if MockData.isEnabled {
-            result      = HRVCalculator.calculate(from: MockData.records())
+            result      = HRVCalculator.calculate(from: MockData.records(), sleep: MockData.sleepRecords())
             isAuthed    = true
             lastUpdated = Date()
             return
@@ -73,7 +73,11 @@ final class HRVViewModel: ObservableObject {
         error = nil
         do {
             let records = try await service.fetchRecovery(limit: 25)
-            result      = HRVCalculator.calculate(from: records)
+            // Sleep is a secondary signal, not required data: a scope that
+            // isn't granted yet (pre-existing sign-in) or a transient failure
+            // just means the sleep consistency row stays hidden, not an error.
+            let sleep = (try? await service.fetchSleep(limit: 25)) ?? []
+            result      = HRVCalculator.calculate(from: records, sleep: sleep)
             lastUpdated = Date()
             if result == nil { error = "Need 7+ nights of WHOOP data." }
         } catch {
@@ -628,15 +632,22 @@ struct DashboardView: View {
     var signalsList: some View {
         if result.baselineDeltaMs != nil {
             Divider().opacity(0.35).padding(.top, 3)
-            Text("SIGNALS")
-                .font(.system(size: 7.5, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(.tertiary)
-                .padding(.top, 3)
+            HStack(spacing: 4) {
+                Text("SIGNALS")
+                    .font(.system(size: 7.5, weight: .semibold))
+                    .tracking(0.6)
+                Text("· VS. PRIOR 7 NIGHTS")
+                    .font(.system(size: 7.5, weight: .medium))
+                    .tracking(0.6)
+                    .opacity(0.7)
+            }
+            .foregroundStyle(.tertiary)
+            .padding(.top, 3)
             VStack(spacing: 3) {
                 baselineSignalRow
                 swingSignalRow
                 recoverySignalRow
+                sleepConsistencySignalRow
             }
             .padding(.top, 2)
         }
@@ -687,7 +698,7 @@ struct DashboardView: View {
         else             { judgment = .neutral; word = "Steady";  sym = "arrow.right" }
         return signalRow(judgment: judgment, symbol: sym, label: "HRV baseline", value: word)
             .help(result.previousMean.map {
-                String(format: "Average nightly HRV: %.1f ms this week, %.1f ms last week.",
+                String(format: "Average nightly HRV: %.1f ms over the last 7 nights, %.1f ms the 7 nights before that.",
                        result.mean, $0)
             } ?? "")
     }
@@ -700,7 +711,7 @@ struct DashboardView: View {
     var swingSignalRow: some View {
         let delta = result.trendDelta ?? 0
         let widening = delta > 0.5, settling = delta < -0.5
-        let word = widening ? "Widening" : settling ? "Settling" : "Steady"
+        let word = widening ? "Widened" : settling ? "Settled" : "Steady"
         let sym  = widening ? "arrow.up" : settling ? "arrow.down" : "arrow.right"
         let judgment: SignalJudgment
         if settling                      { judgment = .good }
@@ -715,7 +726,7 @@ struct DashboardView: View {
         }
         return signalRow(judgment: judgment, symbol: sym, label: "Night-to-night swing", value: word)
             .help(result.previousCV.map {
-                String(format: "HRV-CV: %.1f%% this week, %.1f%% last week.", result.cv, $0)
+                String(format: "HRV-CV: %.1f%% over the last 7 nights, %.1f%% the 7 nights before that.", result.cv, $0)
             } ?? "")
     }
 
@@ -727,6 +738,26 @@ struct DashboardView: View {
         let word = r >= 67 ? "Strong" : r >= 34 ? "Moderate" : "Low"
         return signalRow(judgment: judgment, label: "Recovery", value: word)
             .help("Average WHOOP recovery across the 7 nights: \(r)%.")
+    }
+
+    // Context, not an input to the verdict: has sleep timing itself gotten
+    // more or less regular? A plausible "why" behind a widening HRV swing.
+    // Hidden entirely until read:sleep is granted (existing sign-ins won't
+    // have it until they reconnect) and sleep data lands in this window.
+    @ViewBuilder
+    var sleepConsistencySignalRow: some View {
+        if let consistency = result.avgSleepConsistency {
+            let judgment: SignalJudgment, word: String, sym: String
+            switch result.sleepConsistencyDirection {
+            case .some(1):  judgment = .good;    word = "Rising";  sym = "arrow.up"
+            case .some(-1): judgment = .watch;   word = "Falling"; sym = "arrow.down"
+            default:        judgment = .neutral; word = "Steady";  sym = "arrow.right"
+            }
+            signalRow(judgment: judgment, symbol: sym, label: "Sleep consistency", value: word)
+                .help(result.previousSleepConsistency.map {
+                    "WHOOP sleep consistency: \(consistency)% over the last 7 nights, \($0)% the 7 nights before that."
+                } ?? "WHOOP sleep consistency: \(consistency)% over the last 7 nights.")
+        }
     }
 
     // One row of the reasoning: a glyph + a factual word. Two clean channels:

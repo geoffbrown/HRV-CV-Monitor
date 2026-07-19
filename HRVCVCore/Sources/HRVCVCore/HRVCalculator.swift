@@ -34,6 +34,22 @@ public struct HRVCVResult {
     public let hrvSeries    : [HRVSeriesPoint] // nightly HRV + rolling baseline, for the evidence chart
     public let avgRecovery  : Int          // average WHOOP recovery over the window
 
+    // WHOOP's own sleep_consistency_percentage, averaged over the same nights
+    // as the HRV window (and the 7 nights before that). nil when sleep data
+    // isn't available (scope not granted yet, or no matching records).
+    public let avgSleepConsistency      : Int?
+    public let previousSleepConsistency : Int?
+
+    /// Direction of sleep consistency vs the prior window: +1 more regular,
+    /// -1 less regular, 0 flat, nil if there isn't a prior window to compare.
+    public var sleepConsistencyDirection: Int? {
+        guard let cur = avgSleepConsistency, let prev = previousSleepConsistency else { return nil }
+        let d = cur - prev
+        if d > 3  { return  1 }
+        if d < -3 { return -1 }
+        return 0
+    }
+
     public var cvFormatted   : String { String(format: "%.1f%%", cv) }
     public var meanFormatted : String { String(format: "%.1f ms", mean) }
     public var sdFormatted   : String { String(format: "%.1f ms", sd) }
@@ -129,8 +145,10 @@ public struct HRVCVResult {
 public enum HRVCalculator {
 
     /// Returns the HRV-CV result for the most recent valid 7-night consecutive window,
-    /// or nil if fewer than 7 valid records are available.
-    public static func calculate(from records: [Recovery]) -> HRVCVResult? {
+    /// or nil if fewer than 7 valid records are available. `sleep` is optional —
+    /// pass an empty array (or omit it) if the sleep scope hasn't been granted
+    /// yet; the sleep consistency signal just won't be populated.
+    public static func calculate(from records: [Recovery], sleep: [Sleep] = []) -> HRVCVResult? {
         let isoFull = ISO8601DateFormatter()
         isoFull.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
@@ -194,10 +212,43 @@ public enum HRVCalculator {
 
         let avgRecovery = Int((window.map { Double($0.recovery) }.reduce(0, +) / Double(window.count)).rounded())
 
+        // One sleep_consistency_percentage per calendar day (naps and
+        // unscored nights excluded, latest wins), matched against the same
+        // date ranges as the HRV window and the prior one.
+        var sleepByDay: [Date: Double] = [:]
+        for rec in sleep {
+            guard !rec.nap, rec.scoreState == "SCORED",
+                  let consistency = rec.score?.sleepConsistencyPercentage,
+                  let date = isoFull.date(from: rec.createdAt) ?? isoBasic.date(from: rec.createdAt)
+            else { continue }
+            sleepByDay[Calendar.current.startOfDay(for: date)] = consistency
+        }
+        let avgSleepConsistency = averageConsistency(sleepByDay, from: window.first!.date, to: window.last!.date)
+        var previousSleepConsistency: Double?
+        if parsed.count >= 14 {
+            let prior = parsed[(parsed.count - 14)..<(parsed.count - 7)]
+            previousSleepConsistency = averageConsistency(sleepByDay, from: prior.first!.date, to: prior.last!.date)
+        }
+
         return HRVCVResult(days: window, mean: current.mean, sd: current.sd,
                            cv: current.cv, window: windowLabel,
                            previousCV: previousCV, previousMean: previousMean,
-                           hrvSeries: hrvSeries, avgRecovery: avgRecovery)
+                           hrvSeries: hrvSeries, avgRecovery: avgRecovery,
+                           avgSleepConsistency: avgSleepConsistency.map { Int($0.rounded()) },
+                           previousSleepConsistency: previousSleepConsistency.map { Int($0.rounded()) })
+    }
+
+    /// Average of the sleep-consistency values whose calendar day falls within
+    /// [start, end] inclusive. nil if none fall in range.
+    private static func averageConsistency(_ byDay: [Date: Double], from start: Date, to end: Date) -> Double? {
+        let cal = Calendar.current
+        let startDay = cal.startOfDay(for: start)
+        let endDay = cal.startOfDay(for: end)
+        let vals = byDay.compactMap { date, value in
+            (date >= startDay && date <= endDay) ? value : nil
+        }
+        guard !vals.isEmpty else { return nil }
+        return vals.reduce(0, +) / Double(vals.count)
     }
 
     /// Sample mean, standard deviation, and coefficient of variation (%) for a set of nights.

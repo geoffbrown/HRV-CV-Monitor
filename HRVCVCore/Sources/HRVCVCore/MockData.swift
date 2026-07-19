@@ -41,4 +41,30 @@ public enum MockData {
                             score: .init(recoveryScore: recovery[i], hrvRmssdMilli: hrv[i]))
         }
     }
+
+    public static func sleepRecords() -> [Sleep] {
+        let consistency: [Double]
+        switch variant {
+        case "ontrack":
+            // Steady bed/wake timing, matching the steady HRV story.
+            consistency = [82, 80, 85, 81, 83, 84, 82,
+                           83, 81, 84, 82, 85, 83, 84]
+        case "destabilizing":
+            // Consistency erodes alongside the falling baseline — a plausible
+            // "why" behind the destabilizing warning.
+            consistency = [88, 86, 89, 87, 88, 86, 87,
+                           80, 74, 62, 58, 45, 52, 48]
+        default:
+            // Consistency dips through the transition, then holds at a new
+            // (still fine) level — same "leveling up" shape as the HRV story.
+            consistency = [90, 88, 91, 89, 90, 87, 89,
+                           85, 79, 68, 71, 74, 76, 78]
+        }
+        let iso = ISO8601DateFormatter()
+        return consistency.indices.map { i in
+            let date = Calendar.current.date(byAdding: .day, value: i - (consistency.count - 1), to: Date())!
+            return Sleep(createdAt: iso.string(from: date), nap: false, scoreState: "SCORED",
+                        score: .init(sleepConsistencyPercentage: consistency[i]))
+        }
+    }
 }

@@ -269,11 +269,30 @@ fill was too heavy in the bar). Rendered as **one template `NSImage`**
   `SMAppService.mainApp`.
 - A deeper "restraint pass" is mostly done; keep an eye on spacing rhythm if you add sections.
 - **iOS companion app — Phase 1 landed** (shared core + basic iOS build; see
-  below). Still to come: WHOOP `read:sleep` data folded into SIGNALS, an
-  App Group + shared snapshot, a Widget Extension (home screen + lock screen:
-  `accessoryCircular`/`accessoryRectangular`/`accessoryInline`), and a
-  `BGAppRefreshTask` that fires one local notification per day when a new
-  recovery record lands. None of that is built yet — don't assume it exists.
+  below). **Sleep consistency signal also landed**: `read:sleep` scope added,
+  `Sleep`/`SleepCollection` models + `WHOOPService.fetchSleep`, and a fourth
+  SIGNALS row (`sleepConsistencySignalRow`) averaging WHOOP's own
+  `sleep_consistency_percentage` over the same 7-night windows as the HRV-CV
+  calculation — deliberately reusing WHOOP's own score rather than deriving a
+  duration-variability metric ourselves. **Caveat:** existing sign-ins issued
+  before this scope was added won't have `read:sleep` on their token; the row
+  just stays hidden (`avgSleepConsistency == nil`) until the user signs out
+  and reconnects WHOOP to re-consent — there's no migration path, and that's
+  fine, it degrades silently rather than erroring.
+  Still to come: an App Group + shared snapshot, a Widget Extension (home
+  screen + lock screen: `accessoryCircular`/`accessoryRectangular`/
+  `accessoryInline`), and a `BGAppRefreshTask` that fires one local
+  notification per day when a new recovery record lands. None of that is
+  built yet — don't assume it exists.
+- **SIGNALS wording**: "Night-to-night swing" values are past-tense
+  ("Widened"/"Settled"/"Steady"), not present-progressive ("Widening") —
+  deliberate, because all SIGNALS comparisons are rolling-7-night-window vs
+  the prior rolling-7-night-window, not a live trend, and "-ing" reads as
+  "happening right now" even when the chart's tail is already recovering.
+  The `SIGNALS · VS. PRIOR 7 NIGHTS` caption and the `.help()` tooltip copy
+  ("over the last 7 nights" / "the 7 nights before that", not "this week" /
+  "last week") exist for the same reason — "week" implies a calendar week,
+  which this isn't. Keep any new SIGNALS row consistent with both of these.
 
 ### iOS Phase 1 architecture (for the next instance)
 
