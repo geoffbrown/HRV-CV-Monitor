@@ -569,7 +569,8 @@ struct DashboardView: View {
     // color = verdict.
     func hrvReadout(_ p: HRVSeriesPoint) -> some View {
         HStack(spacing: 6) {
-            Text(p.label).foregroundStyle(.secondary)
+            Text("\(p.date.formatted(.dateTime.weekday(.abbreviated))) \(p.label)")
+                .foregroundStyle(.secondary)
             Text(String(format: "%.0f ms", p.hrv)).foregroundStyle(recoveryColor(p.recovery))
             Spacer(minLength: 4)
             HStack(spacing: 3) {
@@ -914,17 +915,16 @@ struct DashboardView: View {
                     .frame(width: 48, alignment: .leading)
                 Text("WHOOP RECOVERY")
                     .frame(maxWidth: .infinity, alignment: .leading)
-                // Mirror the data row's trailing columns (30 recovery% + 34 HRV
-                // + ms unit) so "HRV" sits directly over the numbers, not the
-                // "ms". The recovery-% column stays unlabeled; the ms slot is a
-                // hidden placeholder that just reserves the unit's width.
-                Spacer()
+                // Mirror the data row's trailing columns with identical FIXED
+                // widths (30 recovery% + 34 HRV + 18 unit) so "HRV" sits exactly
+                // over the numbers, not the "ms". Fixed widths (not a hidden-text
+                // placeholder) keep it pixel-aligned regardless of font metrics.
+                Color.clear
                     .frame(width: 30)
                 Text("HRV")
                     .frame(width: 34, alignment: .trailing)
-                Text("ms")
-                    .scaledFont(size: 10)
-                    .hidden()
+                Color.clear
+                    .frame(width: 18)
             }
             .scaledFont(size: 9, weight: .semibold)
             .tracking(0.5)
@@ -947,6 +947,7 @@ struct DashboardView: View {
                     Text("ms")
                         .scaledFont(size: 10)
                         .foregroundStyle(.tertiary)
+                        .frame(width: 18, alignment: .leading)
                 }
             }
         }
