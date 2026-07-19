@@ -750,17 +750,25 @@ struct DashboardView: View {
     @ViewBuilder
     var sleepConsistencySignalRow: some View {
         if let consistency = result.avgSleepConsistency {
-            let judgment: SignalJudgment, word: String, sym: String
-            switch result.sleepConsistencyDirection {
-            case .some(1):  judgment = .good;    word = "Rising";  sym = "arrow.up"
-            case .some(-1): judgment = .watch;   word = "Falling"; sym = "arrow.down"
-            default:        judgment = .neutral; word = "Steady";  sym = "arrow.right"
-            }
-            signalRow(judgment: judgment, symbol: sym, label: "Sleep consistency", value: word)
-                .help(result.previousSleepConsistency.map {
-                    "WHOOP sleep consistency: \(consistency)% over the last 7 nights, \($0)% the 7 nights before that."
-                } ?? "WHOOP sleep consistency: \(consistency)% over the last 7 nights.")
+            sleepRow(consistency: consistency)
         }
+    }
+
+    // Split out of the @ViewBuilder above: the imperative switch that picks
+    // the word/glyph/judgment can't live inside a ViewBuilder (the builder
+    // would try to read the assignment switch as a view), so it goes in a
+    // plain function with an explicit return.
+    private func sleepRow(consistency: Int) -> some View {
+        let judgment: SignalJudgment, word: String, sym: String
+        switch result.sleepConsistencyDirection {
+        case .some(1):  judgment = .good;    word = "Rising";  sym = "arrow.up"
+        case .some(-1): judgment = .watch;   word = "Falling"; sym = "arrow.down"
+        default:        judgment = .neutral; word = "Steady";  sym = "arrow.right"
+        }
+        return signalRow(judgment: judgment, symbol: sym, label: "Sleep consistency", value: word)
+            .help(result.previousSleepConsistency.map {
+                "WHOOP sleep consistency: \(consistency)% over the last 7 nights, \($0)% the 7 nights before that."
+            } ?? "WHOOP sleep consistency: \(consistency)% over the last 7 nights.")
     }
 
     // One row of the reasoning: a glyph + a factual word. Two clean channels:
