@@ -1,6 +1,7 @@
 #if os(macOS)
 import SwiftUI
 import AppKit
+import HRVCVCore
 
 // MARK: - Snapshot Hook
 // Dev-only: HRVCV_SNAPSHOT=/path.png renders the popover to a PNG and exits
