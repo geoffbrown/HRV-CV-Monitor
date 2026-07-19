@@ -921,8 +921,11 @@ struct DashboardView: View {
                 // placeholder) keep it pixel-aligned regardless of font metrics.
                 Color.clear
                     .frame(width: 30)
+                // Left-aligned over the number column (numbers themselves are
+                // right-aligned within the same 34pt box), so "HRV" sits at the
+                // left edge of the values rather than hugging their right edge.
                 Text("HRV")
-                    .frame(width: 34, alignment: .trailing)
+                    .frame(width: 34, alignment: .leading)
                 Color.clear
                     .frame(width: 18)
             }
