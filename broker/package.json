@@ -1,0 +1,11 @@
+{
+  "name": "hrvcv-auth-broker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Token broker for HRV-CV Monitor — holds the WHOOP client secret server-side so distributed app builds never embed it.",
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@vercel/node": "^3.2.0",
+    "typescript": "^5.5.0"
+  }
+}
