@@ -216,7 +216,7 @@ struct CVGauge: View {
     private func innerNumeral(_ text: String, at n: Double,
                               cx: CGFloat, cy: CGFloat, r: CGFloat) -> some View {
         Text(text)
-            .font(.system(size: 7.5, weight: .medium, design: .rounded))
+            .font(.system(size: 8, weight: .medium, design: .rounded))
             .foregroundStyle(.tertiary)
             .position(arcPoint(n: n, cx: cx, cy: cy, r: r))
     }
@@ -295,7 +295,7 @@ struct HRVBandChart: View {
                     Path { p in p.move(to: CGPoint(x: 0, y: oy)); p.addLine(to: CGPoint(x: w, y: oy)) }
                         .stroke(Color.secondary.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [2, 3]))
                     Text("last week")
-                        .font(.system(size: 7, weight: .medium))
+                        .font(.system(size: 8, weight: .medium))
                         .foregroundStyle(.tertiary)
                         .position(x: 28, y: oy - 6)
                 }
@@ -542,7 +542,7 @@ struct DashboardView: View {
                     Spacer()
                     Text(s.last?.label ?? "")
                 }
-                .font(.system(size: 8))
+                .font(.system(size: 9))
                 .foregroundStyle(.tertiary)
             }
         }
@@ -637,10 +637,10 @@ struct DashboardView: View {
             Divider().opacity(0.35).padding(.top, 3)
             HStack(spacing: 4) {
                 Text("SIGNALS")
-                    .font(.system(size: 7.5, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .tracking(0.6)
                 Text("· VS. PRIOR 7 NIGHTS")
-                    .font(.system(size: 7.5, weight: .medium))
+                    .font(.system(size: 9, weight: .medium))
                     .tracking(0.6)
                     .opacity(0.7)
             }
@@ -784,7 +784,7 @@ struct DashboardView: View {
             Group {
                 if differentiateWithoutColor {
                     Image(systemName: judgment.symbol)
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                 } else if let symbol {
                     Image(systemName: symbol)
                         .font(.system(size: 8, weight: .bold))
@@ -883,7 +883,7 @@ struct DashboardView: View {
                 }
             }
             Text(label)
-                .font(.system(size: 8, weight: .semibold))
+                .font(.system(size: 9, weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(.tertiary)
         }
@@ -908,7 +908,7 @@ struct DashboardView: View {
                 Text("HRV")
                     .frame(width: 56, alignment: .trailing)
             }
-            .font(.system(size: 8, weight: .semibold))
+            .font(.system(size: 9, weight: .semibold))
             .tracking(0.5)
             .foregroundStyle(.tertiary)
 
