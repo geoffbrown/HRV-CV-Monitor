@@ -19,9 +19,11 @@ app  ──POST /api/refresh {refresh_token}────────────
 |--------|----------------|-------------------------------------------|-----------------------------|
 | POST   | `/api/token`   | `{ code, code_verifier, redirect_uri }`   | WHOOP token JSON (passthrough) |
 | POST   | `/api/refresh` | `{ refresh_token }`                       | WHOOP token JSON (passthrough) |
+| GET    | `/api/health`  | —                                         | `{ ok, hasClientId, hasClientSecret }` |
 
 WHOOP's status codes and error bodies are forwarded unchanged, so the app still
-sees real OAuth errors.
+sees real OAuth errors. `/api/health` is a credential-free readiness check: it
+reports whether the client env vars are set (never their values).
 
 ## Deploy to Vercel
 
@@ -35,6 +37,10 @@ sees real OAuth errors.
    (or add them in the Vercel dashboard → Project → Settings → Environment Variables)
 4. Deploy production: `vercel --prod`
 5. Copy the resulting base URL, e.g. `https://hrvcv-auth-broker.vercel.app`
+6. Verify the credentials attached:
+   `curl https://hrvcv-auth-broker.vercel.app/api/health`
+   → expect `{"ok":true,"hasClientId":true,"hasClientSecret":true}`. If either
+   is `false`, the env var didn't attach — re-add it and redeploy (`vercel --prod`).
 
 ## Point the app at the broker
 
