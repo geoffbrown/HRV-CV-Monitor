@@ -1,12 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { exchangeWithWhoop, applyCors } from './_whoop';
+import { exchangeWithWhoop, hardenResponse } from './_whoop';
 
 // POST /api/token
 // Body: { code, code_verifier, redirect_uri }
 // Exchanges an authorization code for tokens, adding the client secret server-side.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  applyCors(res);
-  if (req.method === 'OPTIONS') return res.status(204).end();
+  hardenResponse(res);
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'method_not_allowed' });
   }

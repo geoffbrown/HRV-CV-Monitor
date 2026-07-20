@@ -31,9 +31,15 @@ export async function exchangeWithWhoop(
   return { status: r.status, body: await r.text() };
 }
 
-/** Permissive CORS (harmless for the native client; convenient for testing). */
-export function applyCors(res: VercelResponse): void {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+/**
+ * Hardens responses for the only legitimate caller: the native macOS/iOS app,
+ * which uses URLSession and ignores CORS entirely. We therefore grant NO
+ * cross-origin access — a webpage in someone's browser cannot read these
+ * responses. We deliberately send no `Access-Control-Allow-Origin` at all:
+ * not `*`, and not `'null'` (the latter would actually grant access to
+ * sandboxed / null-origin browser contexts).
+ */
+export function hardenResponse(res: VercelResponse): void {
+  res.setHeader('Vary', 'Origin');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
 }
