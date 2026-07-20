@@ -14,6 +14,7 @@ public struct Recovery: Decodable {
     struct RecoveryScore: Decodable {
         let recoveryScore: Int?
         let hrvRmssdMilli: Double?
+        let restingHeartRate: Double?
     }
 
     enum CodingKeys: String, CodingKey {
@@ -28,6 +29,7 @@ extension Recovery.RecoveryScore {
     enum CodingKeys: String, CodingKey {
         case recoveryScore = "recovery_score"
         case hrvRmssdMilli = "hrv_rmssd_milli"
+        case restingHeartRate = "resting_heart_rate"
     }
 }
 

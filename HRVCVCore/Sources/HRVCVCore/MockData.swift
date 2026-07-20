@@ -9,7 +9,7 @@ public enum MockData {
     public static var isEnabled: Bool { !variant.isEmpty && variant != "0" }
 
     public static func records() -> [Recovery] {
-        let hrv: [Double], recovery: [Int]
+        let hrv: [Double], recovery: [Int], rhr: [Double]
         switch variant {
         case "ontrack":
             // Steady around 45 ms with moderate spread: CV ~9%, on track.
@@ -17,6 +17,9 @@ public enum MockData {
                         40, 48, 42, 50, 44, 49, 41]
             recovery = [72, 78, 66, 80, 74, 82, 70,
                         68, 81, 70, 85, 75, 83, 69]
+            // Resting HR flat, matching the steady story.
+            rhr      = [54, 53, 55, 54, 54, 53, 55,
+                        54, 55, 53, 54, 55, 53, 54]
         case "destabilizing":
             // A tight ~51 ms week, then falling and swingy: CV ~17% with a
             // dropping baseline — the warning story.
@@ -24,6 +27,9 @@ public enum MockData {
                         50, 48, 38, 45, 30, 42, 35]
             recovery = [84, 80, 86, 82, 85, 81, 83,
                         70, 65, 44, 58, 30, 52, 40]
+            // Resting HR climbing as things destabilize (up ~6 bpm) — a warning.
+            rhr      = [50, 51, 49, 50, 51, 50, 49,
+                        52, 54, 58, 56, 60, 57, 59]
         default:
             // Two contrasting weeks: a tight ~34 ms baseline, then a step up to
             // a higher but swingier ~44 ms week — the "leveling up" story.
@@ -31,6 +37,9 @@ public enum MockData {
                         33.6, 34.8, 58.2, 48.7, 53.9, 41.7, 37.4]
             recovery = [66, 61, 68, 64, 65, 60, 63,
                         57, 58, 97, 93, 96, 71, 55]
+            // Resting HR settling lower as HRV levels up (down ~5 bpm) — good.
+            rhr      = [58, 59, 57, 58, 58, 60, 59,
+                        57, 56, 50, 52, 51, 54, 55]
         }
         let iso = ISO8601DateFormatter()
         return hrv.indices.map { i in
@@ -38,7 +47,8 @@ public enum MockData {
             return Recovery(cycleId: i,
                             createdAt: iso.string(from: date),
                             scoreState: "SCORED",
-                            score: .init(recoveryScore: recovery[i], hrvRmssdMilli: hrv[i]))
+                            score: .init(recoveryScore: recovery[i], hrvRmssdMilli: hrv[i],
+                                         restingHeartRate: rhr[i]))
         }
     }
 

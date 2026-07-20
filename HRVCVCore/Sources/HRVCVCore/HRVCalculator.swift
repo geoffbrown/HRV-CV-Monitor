@@ -7,6 +7,7 @@ public struct HRVDay: Identifiable {
     public let label     : String   // e.g. "Jul 16"
     public let hrv       : Double   // rMSSD in ms
     public let recovery  : Int      // 0–100
+    public let restingHR : Double?  // resting heart rate (bpm), nil if absent
 }
 
 // MARK: - HRV Series Point
@@ -47,6 +48,23 @@ public struct HRVCVResult {
         let d = cur - prev
         if d > 3  { return  1 }
         if d < -3 { return -1 }
+        return 0
+    }
+
+    // Resting heart rate (bpm), averaged over the same nights as the HRV window
+    // and the 7 before it. From the recovery records we already fetch. nil when
+    // WHOOP didn't score an RHR for those nights.
+    public let avgRestingHR      : Int?
+    public let previousRestingHR : Int?
+
+    /// Raw direction of resting HR vs the prior window: +1 higher, -1 lower,
+    /// 0 flat (threshold 2 bpm). NOTE the reading is direction-only — lower RHR
+    /// is the good direction, but that judgment lives in the view, not here.
+    public var restingHRDirection: Int? {
+        guard let cur = avgRestingHR, let prev = previousRestingHR else { return nil }
+        let d = cur - prev
+        if d > 2  { return  1 }
+        if d < -2 { return -1 }
         return 0
     }
 
@@ -167,10 +185,11 @@ public enum HRVCalculator {
             guard let date else { return nil }
 
             return HRVDay(
-                date:     date,
-                label:    display.string(from: date),
-                hrv:      hrv,
-                recovery: recovery
+                date:      date,
+                label:     display.string(from: date),
+                hrv:       hrv,
+                recovery:  recovery,
+                restingHR: rec.score?.restingHeartRate
             )
         }.sorted { $0.date < $1.date }
 
@@ -230,12 +249,29 @@ public enum HRVCalculator {
             previousSleepConsistency = averageConsistency(sleepByDay, from: prior.first!.date, to: prior.last!.date)
         }
 
+        // Resting HR over the same windows (from the recovery records above).
+        let avgRestingHR = averageRestingHR(of: window)
+        var previousRestingHR: Double?
+        if parsed.count >= 14 {
+            previousRestingHR = averageRestingHR(of: parsed[(parsed.count - 14)..<(parsed.count - 7)])
+        }
+
         return HRVCVResult(days: window, mean: current.mean, sd: current.sd,
                            cv: current.cv, window: windowLabel,
                            previousCV: previousCV, previousMean: previousMean,
                            hrvSeries: hrvSeries, avgRecovery: avgRecovery,
                            avgSleepConsistency: avgSleepConsistency.map { Int($0.rounded()) },
-                           previousSleepConsistency: previousSleepConsistency.map { Int($0.rounded()) })
+                           previousSleepConsistency: previousSleepConsistency.map { Int($0.rounded()) },
+                           avgRestingHR: avgRestingHR.map { Int($0.rounded()) },
+                           previousRestingHR: previousRestingHR.map { Int($0.rounded()) })
+    }
+
+    /// Average of the non-nil resting-HR values across a set of nights. nil if none.
+    private static func averageRestingHR<S: Sequence>(of days: S) -> Double?
+        where S.Element == HRVDay {
+        let vals = days.compactMap(\.restingHR)
+        guard !vals.isEmpty else { return nil }
+        return vals.reduce(0, +) / Double(vals.count)
     }
 
     /// Average of the sleep-consistency values whose calendar day falls within

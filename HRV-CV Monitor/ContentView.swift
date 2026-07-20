@@ -659,6 +659,7 @@ struct DashboardView: View {
             VStack(spacing: 3) {
                 baselineSignalRow
                 swingSignalRow
+                restingHRSignalRow
                 recoverySignalRow
                 sleepConsistencySignalRow
             }
@@ -779,6 +780,31 @@ struct DashboardView: View {
             .help(result.previousSleepConsistency.map {
                 "WHOOP sleep consistency: \(consistency)% over the last 7 nights, \($0)% the 7 nights before that."
             } ?? "WHOOP sleep consistency: \(consistency)% over the last 7 nights.")
+    }
+
+    // Resting heart rate trend — the honest, API-supported cousin of a timed
+    // pre-sleep HR reading (WHOOP exposes only a daily sleep-derived RHR, not an
+    // instantaneous stream). Lower is the good direction, so the word/arrow state
+    // the fact and the tint judges it: Falling = good, Rising = worth watching.
+    // Hidden until RHR data lands (older records may lack it).
+    @ViewBuilder
+    var restingHRSignalRow: some View {
+        if let rhr = result.avgRestingHR {
+            restingRow(rhr: rhr)
+        }
+    }
+
+    private func restingRow(rhr: Int) -> some View {
+        let judgment: SignalJudgment, word: String, sym: String
+        switch result.restingHRDirection {
+        case .some(1):  judgment = .watch;   word = "Rising";  sym = "arrow.up"
+        case .some(-1): judgment = .good;    word = "Falling"; sym = "arrow.down"
+        default:        judgment = .neutral; word = "Steady";  sym = "arrow.right"
+        }
+        return signalRow(judgment: judgment, symbol: sym, label: "Resting HR", value: word)
+            .help(result.previousRestingHR.map {
+                "Resting heart rate: \(rhr) bpm over the last 7 nights, \($0) bpm the 7 nights before that."
+            } ?? "Resting heart rate: \(rhr) bpm over the last 7 nights.")
     }
 
     // One row of the reasoning: a glyph + a factual word. Two clean channels:

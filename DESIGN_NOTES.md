@@ -284,6 +284,17 @@ fill was too heavy in the bar). Rendered as **one template `NSImage`**
   just stays hidden (`avgSleepConsistency == nil`) until the user signs out
   and reconnects WHOOP to re-consent — there's no migration path, and that's
   fine, it degrades silently rather than erroring.
+- **Resting HR signal landed** (`restingHRSignalRow`): a fifth SIGNALS row
+  averaging `resting_heart_rate` — a field that already rides in the `/recovery`
+  payload we fetch, so no new endpoint or scope. Same rolling-window treatment.
+  It's the honest, API-supported cousin of a Bryan-Johnson-style timed pre-sleep
+  HR reading: WHOOP's developer API exposes NO instantaneous/continuous HR
+  stream, only a daily sleep-derived RHR (plus avg/max per cycle/workout), so a
+  reading "3 hours before bed" is not obtainable — a rolling RHR trend is. Note
+  the direction-vs-judgment split matters here: **lower RHR is the good
+  direction**, so `restingHRDirection` returns only the raw sign (+1 higher /
+  -1 lower) and the *view* maps Falling→good(green), Rising→watch(amber). Don't
+  bake the good/bad into the calculator. Hidden when RHR is absent from records.
   Still to come: an App Group + shared snapshot, a Widget Extension (home
   screen + lock screen: `accessoryCircular`/`accessoryRectangular`/
   `accessoryInline`), and a `BGAppRefreshTask` that fires one local
