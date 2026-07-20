@@ -23,24 +23,31 @@ app  ──POST /api/refresh {refresh_token}────────────
 
 WHOOP's status codes and error bodies are forwarded unchanged, so the app still
 sees real OAuth errors. `/api/health` is a credential-free readiness check: it
-reports whether the client env vars are set (never their values).
+reports whether the client env vars are set (never their values). (The root URL
+`/` returns 404 — this is a functions-only project with no web page, expected.)
 
 ## Deploy to Vercel
 
 1. Install the CLI and log in: `npm i -g vercel && vercel login`
-2. From this `broker/` folder: `vercel` (first run links/creates the project)
-3. Set the secret as environment variables (both Preview and Production):
+2. From this `broker/` folder: `vercel` (first run links/creates the project).
+   When prompted for framework/build settings, accept the defaults — it's an
+   `api/`-functions project with no framework and no build step.
+3. Set the credentials as environment variables (Production):
    ```
-   vercel env add WHOOP_CLIENT_ID
-   vercel env add WHOOP_CLIENT_SECRET
+   vercel env add WHOOP_CLIENT_ID production
+   vercel env add WHOOP_CLIENT_SECRET production
    ```
    (or add them in the Vercel dashboard → Project → Settings → Environment Variables)
 4. Deploy production: `vercel --prod`
 5. Copy the resulting base URL, e.g. `https://hrvcv-auth-broker.vercel.app`
-6. Verify the credentials attached:
-   `curl https://hrvcv-auth-broker.vercel.app/api/health`
-   → expect `{"ok":true,"hasClientId":true,"hasClientSecret":true}`. If either
-   is `false`, the env var didn't attach — re-add it and redeploy (`vercel --prod`).
+6. **Verify the deploy** — the health check confirms the function is live and
+   the env vars landed (both booleans should be `true`):
+   ```
+   curl https://hrvcv-auth-broker.vercel.app/api/health
+   # {"ok":true,"hasClientId":true,"hasClientSecret":true}
+   ```
+   If either is `false`, the env var didn't attach — re-add it and redeploy
+   (`vercel --prod`).
 
 ## Point the app at the broker
 
