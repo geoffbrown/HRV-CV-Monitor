@@ -603,20 +603,23 @@ struct DashboardView: View {
     // MARK: Verdict callout — the one contained card, gently tinted by the verdict.
     var statusCard: some View {
         let accent = verdictColor(result.verdict)
-        return HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 1.5).fill(accent).frame(width: 3)
+        return HStack(spacing: 0) {
+            // Full-height accent stripe, flush to the card edges — the card's
+            // clipShape rounds its top/bottom-left corners to match. (Was inset
+            // by the content padding before, so it stopped short of the edges.)
+            Rectangle().fill(accent).frame(width: 3)
             // The (i) sits only in the headline row, not its own full-height
             // column, so the detail sentence and SIGNALS run the full width.
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .center, spacing: 6) {
                     Text(result.statusHeadline)
                         .scaledFont(size: 12, weight: .semibold)
                         .foregroundStyle(accent)
                     Spacer(minLength: 6)
                     Button(action: openLearnMore) {
                         Image(systemName: "info.circle")
-                            .scaledFont(size: 12)
-                            .foregroundStyle(.secondary)
+                            .scaledFont(size: 11)
+                            .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
                     .help("What is HRV-CV?")
@@ -629,12 +632,12 @@ struct DashboardView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 signalsList
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(accent.opacity(0.08))
-        )
+        .background(accent.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     // MARK: Status callout: headline + detail in a quietly tinted card,
@@ -830,9 +833,9 @@ struct DashboardView: View {
             }
             .foregroundStyle(judgment.tint)
             .frame(width: 10)
-            Text(label).foregroundStyle(.tertiary)
+            Text(label).foregroundStyle(.secondary)
             Spacer()
-            Text(value).foregroundStyle(.secondary)
+            Text(value).foregroundStyle(.primary)
         }
         .scaledFont(size: 9.5, weight: .medium, design: .rounded)
         .accessibilityElement(children: .ignore)
