@@ -245,6 +245,15 @@ fill was too heavy in the bar). Rendered as **one template `NSImage`**
   doesn't fire during sleep.
 - **Data hygiene:** `HRVCalculator` **dedupes to one record per calendar day** (latest
   wins) so an updated/extra recovery can't double-count a night in the 7-window.
+- **Population SD, not sample SD (matches WHOOP).** `stats` divides the sum of
+  squared deviations by **N**, not N-1. HRV-CV (per WHOOP / Marco Altini's
+  HRV4Training) is defined on population SD; the 7 nights are the whole window,
+  not a sample. We originally used N-1, which inflated CV by √(N/(N-1)) ≈ 1.08
+  for a 7-night window — that's the bug that made the app read ~15% where WHOOP
+  Coach read 13.7% on the same nights. The chart band's rolling SD uses N too,
+  for consistency. **Do not switch either back to N-1** — it re-breaks WHOOP
+  parity. (If a residual mismatch with WHOOP ever remains after this, suspect
+  window/date alignment or a per-night HRV value difference, not the formula.)
 
 ## 7. Build & repo gotchas
 

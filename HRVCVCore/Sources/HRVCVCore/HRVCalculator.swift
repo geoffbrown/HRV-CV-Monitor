@@ -221,9 +221,8 @@ public enum HRVCalculator {
             let win = Array(parsed[max(0, i - 6)...i])
             let vals = win.map(\.hrv)
             let m = vals.reduce(0, +) / Double(vals.count)
-            let sd = vals.count >= 2
-                ? (vals.map { pow($0 - m, 2) }.reduce(0, +) / Double(vals.count - 1)).squareRoot()
-                : 0
+            // Population SD (divide by N), consistent with `stats` above.
+            let sd = (vals.map { pow($0 - m, 2) }.reduce(0, +) / Double(vals.count)).squareRoot()
             hrvSeries.append(HRVSeriesPoint(date: parsed[i].date, label: parsed[i].label,
                                             hrv: parsed[i].hrv, mean: m, sd: sd,
                                             recovery: parsed[i].recovery))
@@ -287,14 +286,21 @@ public enum HRVCalculator {
         return vals.reduce(0, +) / Double(vals.count)
     }
 
-    /// Sample mean, standard deviation, and coefficient of variation (%) for a set of nights.
+    /// Mean, standard deviation, and coefficient of variation (%) for a set of
+    /// nights. Uses the POPULATION standard deviation (divide by N, not N-1):
+    /// the 7 nights are the whole window of interest, not a sample from a larger
+    /// set, and — critically — this matches WHOOP / Marco Altini's HRV4Training
+    /// definition of HRV-CV. Dividing by N-1 (sample SD) inflates CV by a factor
+    /// of sqrt(N/(N-1)) ≈ 1.08 for a 7-night window, which is exactly the gap
+    /// that made this read ~15% where WHOOP Coach reads 13.7%. Do not "correct"
+    /// this back to N-1 — it would re-break parity with WHOOP.
     private static func stats<S: Sequence>(of days: S) -> (mean: Double, sd: Double, cv: Double)?
         where S.Element == HRVDay {
         let values = days.map(\.hrv)
         guard values.count >= 2 else { return nil }
         let mean = values.reduce(0, +) / Double(values.count)
         guard mean > 0 else { return nil }
-        let variance = values.map { pow($0 - mean, 2) }.reduce(0, +) / Double(values.count - 1)
+        let variance = values.map { pow($0 - mean, 2) }.reduce(0, +) / Double(values.count)
         let sd = sqrt(variance)
         return (mean, sd, (sd / mean) * 100)
     }
