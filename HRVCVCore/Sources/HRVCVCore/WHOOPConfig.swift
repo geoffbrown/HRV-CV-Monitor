@@ -17,5 +17,5 @@ enum WHOOPConfig {
     // the app posts the auth code / refresh token to your backend, which holds the
     // client secret and talks to WHOOP: so shared builds don't embed the secret.
     // Empty = talk to WHOOP directly using the embedded clientSecret (local/dev).
-    static let brokerBaseURL = ""
+    static let brokerBaseURL = "https://hrvcv-auth-broker.vercel.app/api"
 }
