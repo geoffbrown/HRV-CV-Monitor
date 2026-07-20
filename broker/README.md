@@ -17,24 +17,34 @@ app  ──POST /api/refresh {refresh_token}────────────
 
 | Method | Path           | Body                                      | Returns                     |
 |--------|----------------|-------------------------------------------|-----------------------------|
+| GET    | `/api/health`  | —                                         | `{ ok, hasClientId, hasClientSecret }` (deploy check, no secrets) |
 | POST   | `/api/token`   | `{ code, code_verifier, redirect_uri }`   | WHOOP token JSON (passthrough) |
 | POST   | `/api/refresh` | `{ refresh_token }`                       | WHOOP token JSON (passthrough) |
 
 WHOOP's status codes and error bodies are forwarded unchanged, so the app still
-sees real OAuth errors.
+sees real OAuth errors. (The root URL `/` returns 404 — this is a functions-only
+project with no web page, which is expected.)
 
 ## Deploy to Vercel
 
 1. Install the CLI and log in: `npm i -g vercel && vercel login`
-2. From this `broker/` folder: `vercel` (first run links/creates the project)
-3. Set the secret as environment variables (both Preview and Production):
+2. From this `broker/` folder: `vercel` (first run links/creates the project).
+   When prompted for framework/build settings, accept the defaults — it's an
+   `api/`-functions project with no framework and no build step.
+3. Set the credentials as environment variables (Production):
    ```
-   vercel env add WHOOP_CLIENT_ID
-   vercel env add WHOOP_CLIENT_SECRET
+   vercel env add WHOOP_CLIENT_ID production
+   vercel env add WHOOP_CLIENT_SECRET production
    ```
    (or add them in the Vercel dashboard → Project → Settings → Environment Variables)
 4. Deploy production: `vercel --prod`
 5. Copy the resulting base URL, e.g. `https://hrvcv-auth-broker.vercel.app`
+6. **Verify the deploy** — the health check confirms the function is live and
+   the env vars landed (both booleans should be `true`):
+   ```
+   curl https://<your-deployment>.vercel.app/api/health
+   # {"ok":true,"hasClientId":true,"hasClientSecret":true}
+   ```
 
 ## Point the app at the broker
 
