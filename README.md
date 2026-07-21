@@ -14,6 +14,26 @@ nightly-HRV evidence chart, a plain-language verdict with its reasoning, your
 > ≤15% on track, >15% elevated.**
 > ([background](https://www.whoop.com/us/en/thelocker/hrv-cv-recovery-metric/))
 
+## Download
+
+**[⬇ Download the latest release](https://github.com/geoffbrown/HRV-CV-Monitor/releases/latest)** —
+open the `.dmg` and drag **HRV-CV Monitor** onto the **Applications** folder.
+
+The app isn't signed with an Apple Developer ID (it's free and shared among
+friends), so the first time you open it macOS says it's from an *unidentified
+developer*. Clear that once, either way:
+
+- **Right-click** the app in Applications → **Open** → **Open** in the dialog, or
+- run this in Terminal (copy-paste, press Return):
+
+  ```sh
+  xattr -dr com.apple.quarantine "/Applications/HRV-CV Monitor.app"
+  ```
+
+Then launch it normally. HRV-CV Monitor lives in your **menu bar** — there's no
+Dock icon. Click the `CV …%` readout to open the dashboard; on first run it asks
+you to connect your WHOOP account, and that's it.
+
 ## Reading the gauge
 
 The arc is a neutral ruler from 0 to 30%, with tick breaks at **8** and **15**
