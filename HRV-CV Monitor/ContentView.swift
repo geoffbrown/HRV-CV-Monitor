@@ -368,35 +368,70 @@ struct HRVBandChart: View {
     }
 }
 
-// MARK: - Root Menu View
+// MARK: - Root View
+// macOS: the fixed-width menu-bar popover. iOS: a real full-width, scrolling
+// screen with pull-to-refresh and a toolbar. Same content, different chrome.
 struct ContentView: View {
     @EnvironmentObject var vm: HRVViewModel
 
-    var body: some View {
-        Group {
-            if !vm.isAuthed {
-                SignInView()
-            } else if vm.isLoading && vm.result == nil {
-                LoadingView()
-            } else if let result = vm.result {
-                DashboardView(result: result)
-            } else {
-                ErrorView()
-            }
+    @ViewBuilder
+    private var content: some View {
+        if !vm.isAuthed {
+            SignInView()
+        } else if vm.isLoading && vm.result == nil {
+            LoadingView()
+        } else if let result = vm.result {
+            DashboardView(result: result)
+        } else {
+            ErrorView()
         }
-        #if os(macOS)
-        .frame(width: 310)
-        #else
-        .frame(maxWidth: 310)
-        #endif
-        .padding(16)
-        .background(popoverBackground)
+    }
+
+    var body: some View {
         // Text scales with the user's Dynamic Type setting (iOS), but the panel
         // is dense with fixed frames, so clamp to the standard range: the full
         // accessibility sizes (2-3x) would need a layout reflow this doesn't
         // have yet. Meaningful growth without clipping.
+        #if os(macOS)
+        content
+            .frame(width: 310)
+            .padding(16)
+            .background(popoverBackground)
+            .dynamicTypeSize(.xSmall ... .xxxLarge)
+            .onAppear { Task { await vm.loadIfStale() } }
+        #else
+        NavigationStack {
+            ScrollView {
+                content
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: 600)          // keep it readable on iPad
+                    .frame(maxWidth: .infinity)    // and centered
+            }
+            .background(popoverBackground.ignoresSafeArea())
+            .refreshable { await vm.load() }       // pull to refresh (awaits the full load)
+            .navigationTitle("HRV-CV Monitor")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                if vm.isAuthed {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Button { Task { await vm.load() } } label: {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                            }
+                            Button(role: .destructive, action: vm.signOut) {
+                                Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                    }
+                }
+            }
+        }
         .dynamicTypeSize(.xSmall ... .xxxLarge)
         .onAppear { Task { await vm.loadIfStale() } }
+        #endif
     }
 }
 
@@ -999,6 +1034,9 @@ struct DashboardView: View {
     }
 
     // MARK: Footer
+    // macOS puts the refresh + more-menu here in the popover. On iOS those live
+    // in the nav toolbar (and pull-to-refresh), so the footer is just the
+    // "Updated …" timestamp.
     var footerRow: some View {
         HStack {
             if let updated = vm.lastUpdated {
@@ -1007,6 +1045,7 @@ struct DashboardView: View {
                     .foregroundStyle(.tertiary)
             }
             Spacer()
+            #if os(macOS)
             Button(action: { Task { await vm.load() } }) {
                 Image(systemName: "arrow.clockwise")
                     .scaledFont(size: 12)
@@ -1017,7 +1056,6 @@ struct DashboardView: View {
             .accessibilityLabel("Refresh")
 
             Menu {
-                #if os(macOS)
                 Toggle("Launch at Login", isOn: Binding(
                     get: { SMAppService.mainApp.status == .enabled },
                     set: { on in
@@ -1025,24 +1063,20 @@ struct DashboardView: View {
                                 : SMAppService.mainApp.unregister()
                     }))
                 Divider()
-                #endif
                 Button("Sign out", action: vm.signOut)
-                #if os(macOS)
                 Divider()
                 Button("Quit HRV-CV Monitor") { NSApp.terminate(nil) }
                     .keyboardShortcut("q")
-                #endif
             } label: {
                 Image(systemName: "ellipsis")
                     .scaledFont(size: 12)
                     .foregroundStyle(.secondary)
             }
-            #if os(macOS)
             .menuStyle(.borderlessButton)
-            #endif
             .menuIndicator(.hidden)
             .frame(width: 20)
             .accessibilityLabel("More options")
+            #endif
         }
     }
 }

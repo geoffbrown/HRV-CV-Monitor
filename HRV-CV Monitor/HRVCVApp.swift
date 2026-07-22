@@ -4,6 +4,9 @@ import HRVCVCore
 @main
 struct HRVCVApp: App {
     @StateObject private var vm = HRVViewModel()
+    #if os(iOS)
+    @Environment(\.scenePhase) private var scenePhase
+    #endif
 
     init() {
         #if os(macOS)
@@ -24,6 +27,11 @@ struct HRVCVApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(vm)
+                // Foreground refresh — the iOS analog of the macOS wake observer.
+                // loadIfStale() gates on 15-min staleness, so this is cheap.
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { Task { await vm.loadIfStale() } }
+                }
         }
         #endif
     }
