@@ -39,6 +39,8 @@ struct SleepCollection: Decodable {
 
 public struct Sleep: Decodable {
     let createdAt: String
+    let start: String        // sleep onset (ISO8601)
+    let end: String          // wake (ISO8601)
     let nap: Bool
     let scoreState: String
     let score: SleepScore?
@@ -53,6 +55,8 @@ public struct Sleep: Decodable {
 
     enum CodingKeys: String, CodingKey {
         case createdAt = "created_at"
+        case start
+        case end
         case nap
         case scoreState = "score_state"
         case score

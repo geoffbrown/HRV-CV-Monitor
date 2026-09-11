@@ -53,28 +53,41 @@ public enum MockData {
     }
 
     public static func sleepRecords() -> [Sleep] {
-        let consistency: [Double]
+        // consistency = WHOOP's own score; bed/wakeDrift = minutes off a ~11 PM
+        // lights-out / ~7 AM wake, per night. The drift arrays match each story:
+        // steady schedule when consistency is high, scattered when it drops.
+        let consistency: [Double], bedDrift: [Int], wakeDrift: [Int]
         switch variant {
         case "ontrack":
             // Steady bed/wake timing, matching the steady HRV story.
-            consistency = [82, 80, 85, 81, 83, 84, 82,
-                           83, 81, 84, 82, 85, 83, 84]
+            consistency = [82, 80, 85, 81, 83, 84, 82,  83, 81, 84, 82, 85, 83, 84]
+            bedDrift    = [-5, 8, -10, 3, -2, 6, -8,    5, -6, 2, -4, 7, -3, 4]
+            wakeDrift   = [4, -6, 8, -3, 5, -7, 2,     -4, 6, -5, 3, -8, 4, -2]
         case "destabilizing":
-            // Consistency erodes alongside the falling baseline — a plausible
-            // "why" behind the destabilizing warning.
-            consistency = [88, 86, 89, 87, 88, 86, 87,
-                           80, 74, 62, 58, 45, 52, 48]
+            // Schedule erodes across the current week — the "why" behind the swing.
+            consistency = [88, 86, 89, 87, 88, 86, 87,  80, 74, 62, 58, 45, 52, 48]
+            bedDrift    = [-5, 6, -8, 4, -3, 7, -6,     25, -40, 60, -55, 95, -75, 45]
+            wakeDrift   = [3, -5, 6, -4, 5, -6, 3,      20, -30, 45, -35, 65, -50, 30]
         default:
-            // Consistency dips through the transition, then holds at a new
-            // (still fine) level — same "leveling up" shape as the HRV story.
-            consistency = [90, 88, 91, 89, 90, 87, 89,
-                           85, 79, 68, 71, 74, 76, 78]
+            // Moderate, mostly-bedtime drift — a "drifting" schedule.
+            consistency = [90, 88, 91, 89, 90, 87, 89,  85, 79, 68, 71, 74, 76, 78]
+            bedDrift    = [-30, 40, -50, 25, -35, 45, -20,  -22, 28, -30, 18, -25, 24, -15]
+            wakeDrift   = [-15, 20, -25, 12, -18, 22, -10,   10, -12, 15, -8, 13, -11, 7]
         }
+        let cal = Calendar.current
         let iso = ISO8601DateFormatter()
-        return consistency.indices.map { i in
-            let date = Calendar.current.date(byAdding: .day, value: i - (consistency.count - 1), to: Date())!
-            return Sleep(createdAt: iso.string(from: date), nap: false, scoreState: "SCORED",
-                        score: .init(sleepConsistencyPercentage: consistency[i]))
+        let n = consistency.count
+        return (0..<n).map { i in
+            let wakeDay = cal.date(byAdding: .day, value: i - (n - 1), to: Date())!
+            let midnight = cal.startOfDay(for: wakeDay)
+            // wake ~07:00 (+drift) on the wake day; onset ~23:00 (+drift) the evening before.
+            let wake  = cal.date(byAdding: .minute, value: 7 * 60 + wakeDrift[i], to: midnight)!
+            let onset = cal.date(byAdding: .minute, value: -60 + bedDrift[i], to: midnight)!
+            return Sleep(createdAt: iso.string(from: wake),
+                         start: iso.string(from: onset),
+                         end: iso.string(from: wake),
+                         nap: false, scoreState: "SCORED",
+                         score: .init(sleepConsistencyPercentage: consistency[i]))
         }
     }
 }
