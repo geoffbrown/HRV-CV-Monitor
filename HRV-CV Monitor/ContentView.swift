@@ -12,6 +12,7 @@ import UIKit
 @MainActor
 final class HRVViewModel: ObservableObject {
     @Published var result      : HRVCVResult?
+    @Published var sleepResult : SleepResult?
     @Published var isLoading   = false
     @Published var isAuthed    = false
     @Published var error       : String?
@@ -32,7 +33,9 @@ final class HRVViewModel: ObservableObject {
         #endif
 
         if MockData.isEnabled {
-            result      = HRVCalculator.calculate(from: MockData.records(), sleep: MockData.sleepRecords())
+            let mockSleep = MockData.sleepRecords()
+            result      = HRVCalculator.calculate(from: MockData.records(), sleep: mockSleep)
+            sleepResult = SleepCalculator.calculate(from: mockSleep)
             isAuthed    = true
             lastUpdated = Date()
             return
@@ -78,6 +81,7 @@ final class HRVViewModel: ObservableObject {
             // just means the sleep consistency row stays hidden, not an error.
             let sleep = (try? await service.fetchSleep(limit: 25)) ?? []
             result      = HRVCalculator.calculate(from: records, sleep: sleep)
+            sleepResult = SleepCalculator.calculate(from: sleep)
             lastUpdated = Date()
             if result == nil { error = "Need 7+ nights of WHOOP data." }
         } catch {
@@ -96,9 +100,10 @@ final class HRVViewModel: ObservableObject {
 
     func signOut() {
         service.signOut()
-        isAuthed = false
-        result   = nil
-        error    = nil
+        isAuthed    = false
+        result      = nil
+        sleepResult = nil
+        error       = nil
     }
 
     private func scheduleRefresh() {
@@ -373,6 +378,9 @@ struct HRVBandChart: View {
 // screen with pull-to-refresh and a toolbar. Same content, different chrome.
 struct ContentView: View {
     @EnvironmentObject var vm: HRVViewModel
+    @State private var tab: AppTab = .stability
+
+    private enum AppTab { case stability, sleep }
 
     @ViewBuilder
     private var content: some View {
@@ -381,7 +389,28 @@ struct ContentView: View {
         } else if vm.isLoading && vm.result == nil {
             LoadingView()
         } else if let result = vm.result {
-            DashboardView(result: result)
+            VStack(spacing: 14) {
+                // Two views on one metric: HRV-CV stability, and the sleep-timing
+                // regularity that drives it. A segmented control, not a tab bar —
+                // two views don't warrant more chrome.
+                Picker("View", selection: $tab) {
+                    Text("Stability").tag(AppTab.stability)
+                    Text("Sleep").tag(AppTab.sleep)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+
+                switch tab {
+                case .stability:
+                    DashboardView(result: result)
+                case .sleep:
+                    if let sleep = vm.sleepResult {
+                        SleepView(result: sleep)
+                    } else {
+                        SleepUnavailableView()
+                    }
+                }
+            }
         } else {
             ErrorView()
         }
@@ -1078,5 +1107,166 @@ struct DashboardView: View {
             .accessibilityLabel("More options")
             #endif
         }
+    }
+}
+
+// MARK: - Sleep View
+// The focused sleep-consistency screen: WHOOP's consistency headline, our
+// bed/wake drift read, one anchor recommendation, and the tie back to HRV-CV.
+// (Phase 2a: hero + drift signals + recommendation. The bed/wake evidence
+// chart is the next step.)
+struct SleepView: View {
+    let result: SleepResult
+
+    private var tier: SleepResult.Tier { result.tier ?? .erratic }
+    private var accent: Color {
+        switch tier {
+        case .tight:    return tierGreen
+        case .drifting: return tierAmber
+        case .erratic:  return tierRed
+        }
+    }
+    private var consistency: Int { result.latestConsistency ?? result.avgConsistency ?? 0 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            hero
+            verdictCard
+            tieIn
+        }
+    }
+
+    // MARK: Hero — WHOOP's consistency number + tier (higher is better here).
+    private var hero: some View {
+        VStack(spacing: 2) {
+            Text("SLEEP CONSISTENCY")
+                .scaledFont(size: 9, weight: .semibold)
+                .tracking(1.5)
+                .foregroundStyle(.tertiary)
+            Text("\(consistency)%")
+                .scaledFont(size: 38, weight: .bold, design: .rounded)
+                .foregroundStyle(accent)
+            Text(tier.rawValue.uppercased())
+                .scaledFont(size: 10, weight: .semibold)
+                .tracking(1.6)
+                .foregroundStyle(accent)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Sleep consistency \(consistency) percent, \(tier.rawValue).")
+    }
+
+    // MARK: Verdict card — one sentence, the two drift reads, one recommendation.
+    private var verdictCard: some View {
+        HStack(spacing: 0) {
+            Rectangle().fill(accent).frame(width: 3)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(verdictSentence)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(1.5)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                VStack(spacing: 3) {
+                    driftRow(label: "Bedtime", minutes: result.bedtimeDriftMin)
+                    driftRow(label: "Wake time", minutes: result.wakeDriftMin)
+                }
+
+                if let rec = recommendationText {
+                    Divider().opacity(0.35)
+                    Text(rec)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineSpacing(1.5)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(accent.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    // One schedule edge: colored dot (our judgment) + the actual drift in minutes.
+    private func driftRow(label: String, minutes: Double) -> some View {
+        HStack(spacing: 7) {
+            Circle().fill(driftColor(minutes)).frame(width: 5, height: 5)
+            Text(label).foregroundStyle(.secondary)
+            Spacer()
+            Text("\(driftWord(minutes)) · ±\(Int(minutes.rounded())) min").foregroundStyle(.primary)
+        }
+        .scaledFont(size: 9.5, weight: .medium, design: .rounded)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label): \(driftWord(minutes)), plus or minus \(Int(minutes.rounded())) minutes.")
+    }
+
+    // The whole reason this view lives inside HRV-CV Monitor rather than being a
+    // generic sleep tool: it stays in service of the core metric.
+    private var tieIn: some View {
+        Text("Steadier sleep timing is the usual lever behind a lower HRV-CV — the nights your schedule drifts tend to be the nights your HRV swings.")
+            .scaledFont(size: 9.5, weight: .regular)
+            .foregroundStyle(.tertiary)
+            .lineSpacing(1.5)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: derived copy
+    private var verdictSentence: String {
+        switch tier {
+        case .tight:
+            return "Your bed and wake times are steady — a solid base for recovery."
+        case .drifting:
+            return "Your schedule drifts night to night. Tightening it is your biggest sleep lever."
+        case .erratic:
+            return "Your sleep timing is scattered — a likely driver behind a widening HRV swing."
+        }
+    }
+
+    private var recommendationText: String? {
+        switch result.lever {
+        case .bedtime:
+            return "Anchor lights-out near \(result.medianBedtimeText) — bedtime is your most scattered edge."
+        case .wake:
+            return "Anchor your wake time near \(result.medianWakeText) — it's your most scattered edge."
+        case .neither:
+            return nil
+        }
+    }
+
+    private func driftWord(_ minutes: Double) -> String {
+        if minutes <= 15 { return "Steady" }
+        if minutes <= 35 { return "Drifting" }
+        return "Erratic"
+    }
+    private func driftColor(_ minutes: Double) -> Color {
+        if minutes <= 15 { return tierGreen }
+        if minutes <= 35 { return tierAmber }
+        return tierRed
+    }
+}
+
+// MARK: - Sleep Unavailable
+// Shown in the Sleep tab when there's no usable sleep data (scope not granted
+// on an older sign-in, or fewer than 7 nights).
+struct SleepUnavailableView: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "bed.double")
+                .scaledFont(size: 28)
+                .foregroundStyle(.tertiary)
+            Text("Sleep timing unavailable")
+                .scaledFont(size: 12, weight: .semibold)
+                .foregroundStyle(.secondary)
+            Text("Needs 7+ nights of WHOOP sleep data. If you connected before sleep access was added, sign out and reconnect WHOOP to grant it.")
+                .scaledFont(size: 10, weight: .regular)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .lineSpacing(1.5)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
     }
 }
